@@ -1,4 +1,4 @@
-import { Router, type IRouter } from "express";
+import express, { Router, type IRouter } from "express";
 import { getAuth } from "@clerk/express";
 import { z } from "zod";
 
@@ -33,6 +33,10 @@ const VENICE_CHAT_URL = "https://api.venice.ai/api/v1/chat/completions";
 const VENICE_CHAT_MODEL = "llama-3.3-70b";
 const DEZGO_FLUX_URL = "https://api.dezgo.com/text2image_flux";
 const DEZGO_MODEL = "flux_1_schnell";
+// Image-to-image edits use a Stable Diffusion model (Flux has no img2img on
+// Dezgo). realistic_vision_5_1 follows edit prompts well and is uncensored.
+const DEZGO_I2I_URL = "https://api.dezgo.com/image2image";
+const DEZGO_I2I_MODEL = "realistic_vision_5_1";
 
 type ChatMessage = z.infer<typeof messageSchema>;
 
@@ -238,6 +242,79 @@ router.post("/ai/image", async (req, res) => {
     clearTimeout(timer);
   }
 });
+
+// Modify an uploaded image from a text instruction (image-to-image). The image
+// arrives as the raw request body (Content-Type: image/*); the instruction and
+// strength come as query params so we avoid base64 bloat and the JSON limit.
+router.post(
+  "/ai/edit",
+  express.raw({ type: ["image/*", "application/octet-stream"], limit: "12mb" }),
+  async (req, res) => {
+    const { userId } = getAuth(req);
+    if (!userId) {
+      res.status(401).json({ error: "Sign in to use AI editing." });
+      return;
+    }
+    const key = process.env.DEZGO_API_KEY;
+    if (!key) {
+      res.status(503).json({ error: "Image editing is not configured." });
+      return;
+    }
+
+    const prompt = typeof req.query.prompt === "string" ? req.query.prompt.trim() : "";
+    if (!prompt) {
+      res.status(400).json({ error: "Describe how to modify the image." });
+      return;
+    }
+    const negativePrompt =
+      typeof req.query.negative_prompt === "string" ? req.query.negative_prompt.trim() : "";
+
+    let strength = Number(req.query.strength);
+    if (!Number.isFinite(strength)) strength = 0.65;
+    strength = Math.max(0.1, Math.min(1, strength));
+
+    const image = req.body as Buffer;
+    if (!Buffer.isBuffer(image) || image.length === 0) {
+      res.status(400).json({ error: "No image was uploaded." });
+      return;
+    }
+
+    const form = new FormData();
+    form.append("init_image", new Blob([new Uint8Array(image)], { type: "image/png" }), "input.png");
+    form.append("prompt", prompt);
+    form.append("strength", String(strength));
+    form.append("model", DEZGO_I2I_MODEL);
+    form.append("steps", "30");
+    form.append("guidance", "7.5");
+    form.append("format", "png");
+    if (negativePrompt) form.append("negative_prompt", negativePrompt);
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 180_000);
+    try {
+      // Do NOT set Content-Type here — fetch adds the multipart boundary for us.
+      const upstream = await fetch(DEZGO_I2I_URL, {
+        method: "POST",
+        headers: { "X-Dezgo-Key": key },
+        body: form,
+        signal: controller.signal,
+      });
+      if (!upstream.ok) {
+        req.log.error({ status: upstream.status }, "Dezgo image edit failed");
+        res.status(502).json({ error: "Could not modify the image. Try again." });
+        return;
+      }
+      const arrayBuf = await upstream.arrayBuffer();
+      res.setHeader("Content-Type", "image/png");
+      res.send(Buffer.from(arrayBuf));
+    } catch (err) {
+      req.log.error({ err }, "AI image edit request failed");
+      res.status(502).json({ error: "Could not reach the image provider." });
+    } finally {
+      clearTimeout(timer);
+    }
+  },
+);
 
 // ---- ElevenLabs character speech (server-key) ----
 // Uses the app's own ElevenLabs key from the environment; the host is fixed.

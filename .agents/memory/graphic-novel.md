@@ -18,6 +18,11 @@ The user demanded — emphatically — that NO API keys ever appear in the brows
 **Rule:** the client calls only our own auth-gated `/api/ai/*` and sends no keys, hosts, or model names. Providers are fixed in `ai.ts`: script = Anthropic `claude-sonnet-4-6` (Venice `llama-3.3-70b` chat fallback), images = Dezgo Flux `flux_1_schnell` (returns raw PNG bytes; client does `res.blob()`), speech = ElevenLabs. `/api/ai/config` returns only `{ready: boolean}` — never models or keys.
 **Why:** the user reacted with fury to any client-side key surface; reintroducing one is a hard regression. Do not add BYOK back.
 **Dezgo Flux gotcha:** schnell wants few steps — clamp steps to 1–8 and width/height to multiples of 64 ≤1024, or preset values (e.g. 1152, 25 steps) break the call. Discover valid Anthropic models via `GET /v1/models`; Dezgo models + functions via `GET /info` (Flux fn is `text2image_flux`).
+**Dezgo img2img gotcha:** Flux has NO image2image on Dezgo — the `image2image` endpoint needs a Stable-Diffusion model (we use `realistic_vision_5_1`). It is `multipart/form-data` (init_image Blob + prompt + strength 0–1) with the `X-Dezgo-Key` header; do NOT set Content-Type manually (let fetch set the multipart boundary). Returns raw PNG.
+
+# Edit Photo (img2img) feature
+Separate from the text→novel flow: upload any image + describe a change in plain words → `/api/ai/edit` (Dezgo image2image). The route uses `express.raw` for the image body (bypasses the global `express.json` 100kb limit) with prompt/strength as query params, and is Clerk-gated like the rest of `/api/ai/*`. Client downscales (longest edge ≤1024, multiples of 8) before posting to keep upload small.
+**Why query params for prompt:** edit instructions are short, so URL length is a non-issue; switching to multipart would add a body parser just for two short strings.
 
 # AI converter style consistency (non-negotiable)
 The user is furious if drawing style varies between panels.

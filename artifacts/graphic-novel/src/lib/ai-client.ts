@@ -2,6 +2,7 @@ import { StylePreset } from './style-presets';
 
 const SCRIPT_URL = '/api/ai/script';
 const IMAGE_URL = '/api/ai/image';
+const EDIT_URL = '/api/ai/edit';
 
 export interface ScriptPanel {
   caption: string;
@@ -156,6 +157,57 @@ export async function generateImage(
   if (!res.ok) throw new Error(await readError(res));
   const blob = await res.blob();
   if (!blob.size) throw new Error('The image provider returned no image. Try again.');
+  return blob;
+}
+
+// Shrink an uploaded image to a sane size before sending it to the editor, so
+// the round-trip stays fast and cheap. SD models like dimensions that are
+// multiples of 8; we cap the longest edge and re-encode to PNG.
+async function downscaleImage(blob: Blob, maxEdge = 1024): Promise<Blob> {
+  const bitmap = await createImageBitmap(blob);
+  try {
+    const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height));
+    const w = Math.max(64, Math.round((bitmap.width * scale) / 8) * 8);
+    const h = Math.max(64, Math.round((bitmap.height * scale) / 8) * 8);
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Could not process the image.');
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    return await new Promise<Blob>((resolve, reject) =>
+      canvas.toBlob(
+        (b) => (b ? resolve(b) : reject(new Error('Could not process the image.'))),
+        'image/png',
+      ),
+    );
+  } finally {
+    bitmap.close?.();
+  }
+}
+
+// Send an image plus a plain-language instruction and get the modified image
+// back. The provider lives server-side; we post the raw PNG with the prompt and
+// strength as query params.
+export async function editImage(
+  image: Blob,
+  prompt: string,
+  strength: number,
+  negativePrompt?: string,
+): Promise<Blob> {
+  const resized = await downscaleImage(image, 1024);
+  const params = new URLSearchParams({ prompt, strength: String(strength) });
+  if (negativePrompt && negativePrompt.trim()) {
+    params.set('negative_prompt', negativePrompt.trim());
+  }
+  const res = await fetch(`${EDIT_URL}?${params.toString()}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'image/png' },
+    body: resized,
+  });
+  if (!res.ok) throw new Error(await readError(res));
+  const blob = await res.blob();
+  if (!blob.size) throw new Error('The editor returned no image. Try again.');
   return blob;
 }
 

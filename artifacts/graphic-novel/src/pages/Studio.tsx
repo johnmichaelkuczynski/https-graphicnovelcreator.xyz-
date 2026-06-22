@@ -6,11 +6,12 @@ import { PanelGrid } from '@/components/PanelGrid';
 import { AudioManager } from '@/components/AudioManager';
 import { PreviewPlayer } from '@/components/PreviewPlayer';
 import { ConvertDialog } from '@/components/ConvertDialog';
+import { EditImageDialog } from '@/components/EditImageDialog';
 import { ProjectsDialog } from '@/components/ProjectsDialog';
 import { Button } from '@/components/ui/button';
 import {
   Play, Plus, Upload, Music, Image as ImageIcon, FileText, Film,
-  FolderPlus, Trash2, ChevronDown, Loader2, LogOut, Wand2, Pencil,
+  FolderPlus, Trash2, ChevronDown, Loader2, LogOut, Wand2, Pencil, Sparkles,
 } from 'lucide-react';
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuLabel,
@@ -43,6 +44,7 @@ export default function Studio() {
   const [isDragging, setIsDragging] = useState(false);
   const [exportStatus, setExportStatus] = useState<string | null>(null);
   const [showConvert, setShowConvert] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
   const [showProjects, setShowProjects] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
 
@@ -140,6 +142,8 @@ export default function Studio() {
       {isPreviewing && <PreviewPlayer onClose={() => setIsPreviewing(false)} />}
 
       <ConvertDialog open={showConvert} onOpenChange={setShowConvert} />
+
+      <EditImageDialog open={showEdit} onOpenChange={setShowEdit} />
 
       <ProjectsDialog open={showProjects} onOpenChange={setShowProjects} />
 
@@ -251,6 +255,14 @@ export default function Studio() {
             onClick={() => setShowConvert(true)}
           >
             <Wand2 className="w-4 h-4 mr-2" /> Convert Text
+          </Button>
+
+          <Button
+            variant="outline"
+            className="bg-secondary text-secondary-foreground border-2 border-border brutal-shadow brutal-shadow-hover hover:bg-secondary/90 font-black uppercase tracking-tight"
+            onClick={() => setShowEdit(true)}
+          >
+            <Sparkles className="w-4 h-4 mr-2" /> Edit Photo
           </Button>
 
           {/* Download menu */}

@@ -24,14 +24,15 @@ A browser-based studio for assembling graphic novels from your own uploaded imag
 
 - `artifacts/graphic-novel/` — the React + Vite studio (web app, served at `/`).
   - `src/lib/db.ts` — IndexedDB schema (projects / panels / audio_tracks), source of truth for the data model.
-  - `src/lib/ai-client.ts` — Text→Novel conversion logic (script + image generation, style consistency). Talks only to our own `/api/ai/*`; no provider/keys client-side.
+  - `src/lib/ai-client.ts` — Text→Novel conversion logic (script + image generation, style consistency) plus `editImage()` (image-to-image; downscales client-side, posts raw PNG). Talks only to our own `/api/ai/*`; no provider/keys client-side.
+  - `src/components/EditImageDialog.tsx` — "Edit Photo" feature: upload an image, describe the change in plain words, strength slider, then add result as a panel / download / re-edit.
   - `src/lib/style-presets.ts` — drawing-style presets (incl. token-light `stick`).
   - `src/lib/export.ts` — PDF + video export, including audio mixing.
   - `src/components/ConvertDialog.tsx` — the Text→Novel form (incl. PDF/.docx/TXT upload into source text).
   - `src/lib/text-extract.ts` — client-side document text extraction (pdfjs-dist + mammoth, lazy-loaded).
   - `src/components/SpeakControl.tsx` — per-panel ElevenLabs character voice picker.
   - `src/lib/tts-client.ts` — calls the speech endpoints.
-- `artifacts/api-server/src/routes/ai.ts` — auth-gated AI routes, all using backend env keys: `/api/ai/script` (Anthropic + Venice fallback), `/api/ai/image` (Dezgo Flux, returns PNG bytes), `/api/ai/voices` + `/api/ai/tts` (ElevenLabs), and `/api/ai/config` (reports readiness only).
+- `artifacts/api-server/src/routes/ai.ts` — auth-gated AI routes, all using backend env keys: `/api/ai/script` (Anthropic + Venice fallback), `/api/ai/image` (Dezgo Flux text2image, returns PNG bytes), `/api/ai/edit` (Dezgo `image2image` img2img — raw image body via `express.raw`, prompt/strength as query params, returns PNG), `/api/ai/voices` + `/api/ai/tts` (ElevenLabs), and `/api/ai/config` (reports readiness only).
 
 ## Architecture decisions
 
