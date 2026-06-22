@@ -1,4 +1,5 @@
 import React, { useRef, useState } from 'react';
+import { Link } from 'wouter';
 import { usePanels, useAudioTracks, useSavePanel, useSaveAudioTrack } from '@/hooks/use-novel';
 import { useCreateProject, useClearProject } from '@/hooks/use-projects';
 import { useProjectContext } from '@/lib/project-context';
@@ -9,10 +10,13 @@ import { ConvertDialog } from '@/components/ConvertDialog';
 import { EditImageDialog } from '@/components/EditImageDialog';
 import { ProjectsDialog } from '@/components/ProjectsDialog';
 import { DiagnosticsDialog } from '@/components/DiagnosticsDialog';
+import { LibraryImagePicker } from '@/components/LibraryImagePicker';
+import { LibraryImage } from '@/lib/db';
 import { Button } from '@/components/ui/button';
 import {
   Play, Plus, Upload, Music, Image as ImageIcon, FileText, Film,
   FolderPlus, Trash2, ChevronDown, Loader2, LogOut, Wand2, Pencil, Sparkles, Activity,
+  Library as LibraryIcon,
 } from 'lucide-react';
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuLabel,
@@ -49,6 +53,7 @@ export default function Studio() {
   const [showProjects, setShowProjects] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [showLibraryPicker, setShowLibraryPicker] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
@@ -75,6 +80,22 @@ export default function Studio() {
   const handleBatchImages = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) await addImageFiles(e.target.files);
     if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const addLibraryImages = async (images: LibraryImage[]) => {
+    if (!currentProjectId || images.length === 0) return;
+    let maxOrder = panels.length > 0 ? Math.max(...panels.map((p) => p.order)) : -1;
+    for (const img of images) {
+      maxOrder += 1;
+      await savePanel.mutateAsync({
+        id: crypto.randomUUID(),
+        projectId: currentProjectId,
+        imageBlob: img.imageBlob,
+        caption: '',
+        durationSeconds: 3,
+        order: maxOrder,
+      });
+    }
   };
 
   const handleBatchAudio = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -150,6 +171,12 @@ export default function Studio() {
       <ProjectsDialog open={showProjects} onOpenChange={setShowProjects} />
 
       <DiagnosticsDialog open={showDiagnostics} onOpenChange={setShowDiagnostics} />
+
+      <LibraryImagePicker
+        open={showLibraryPicker}
+        onOpenChange={setShowLibraryPicker}
+        onConfirm={addLibraryImages}
+      />
 
       <AlertDialog open={showClearConfirm} onOpenChange={setShowClearConfirm}>
         <AlertDialogContent className="border-2 border-border">
@@ -231,6 +258,16 @@ export default function Studio() {
           >
             <FolderPlus className="w-4 h-4 mr-2" /> New
           </Button>
+
+          <Link href="/library">
+            <Button
+              variant="outline"
+              className="bg-card border-2 border-border brutal-shadow brutal-shadow-hover font-bold"
+              title="Your reusable images, documents and instructions"
+            >
+              <LibraryIcon className="w-4 h-4 mr-2" /> Library
+            </Button>
+          </Link>
         </div>
 
         <div className="flex items-center gap-3 flex-wrap">
@@ -245,13 +282,25 @@ export default function Studio() {
             <Music className="w-4 h-4 mr-2" /> Add Audio
           </Button>
 
-          <Button
-            variant="outline"
-            className="bg-card border-2 border-border brutal-shadow brutal-shadow-hover hover:bg-accent hover:text-accent-foreground font-bold"
-            onClick={triggerAddImages}
-          >
-            <ImageIcon className="w-4 h-4 mr-2" /> Add Panels
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                className="bg-card border-2 border-border brutal-shadow brutal-shadow-hover hover:bg-accent hover:text-accent-foreground font-bold"
+              >
+                <ImageIcon className="w-4 h-4 mr-2" /> Add Panels
+                <ChevronDown className="w-4 h-4 ml-2" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-56 border-2 border-border">
+              <DropdownMenuItem onClick={triggerAddImages} className="font-bold cursor-pointer">
+                <Upload className="w-4 h-4 mr-2" /> Upload from computer
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setShowLibraryPicker(true)} className="font-bold cursor-pointer">
+                <LibraryIcon className="w-4 h-4 mr-2" /> Add from Library
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
 
           <Button
             variant="outline"

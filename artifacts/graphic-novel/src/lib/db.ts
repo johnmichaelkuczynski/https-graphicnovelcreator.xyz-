@@ -32,6 +32,35 @@ export interface AudioTrack {
   order: number;
 }
 
+// ---- Reusable libraries (global, NOT scoped to a project) ----
+// These let the user upload/write something once and reuse it across every
+// project, instead of re-finding the same file or re-typing the same prompt.
+
+export interface LibraryImage {
+  id: string;
+  name: string;
+  imageBlob: Blob;
+  createdAt: number;
+}
+
+export interface LibraryDocument {
+  id: string;
+  name: string;
+  // Extracted plain text, ready to drop into the converter's source field.
+  text: string;
+  // The original uploaded file, kept so the user can re-download it later.
+  fileBlob?: Blob;
+  createdAt: number;
+}
+
+export interface LibraryInstruction {
+  id: string;
+  title: string;
+  // The reusable "turn it into…" prompt for generating a graphic novel.
+  text: string;
+  createdAt: number;
+}
+
 interface NovelDBSchema extends DBSchema {
   projects: {
     key: string;
@@ -47,13 +76,25 @@ interface NovelDBSchema extends DBSchema {
     value: AudioTrack;
     indexes: { 'by-order': number; 'by-project': string };
   };
+  library_images: {
+    key: string;
+    value: LibraryImage;
+  };
+  library_documents: {
+    key: string;
+    value: LibraryDocument;
+  };
+  library_instructions: {
+    key: string;
+    value: LibraryInstruction;
+  };
 }
 
 let dbPromise: Promise<IDBPDatabase<NovelDBSchema>>;
 
 export async function getDB() {
   if (!dbPromise) {
-    dbPromise = openDB<NovelDBSchema>('novel-creator-db', 4, {
+    dbPromise = openDB<NovelDBSchema>('novel-creator-db', 5, {
       async upgrade(db, oldVersion, _newVersion, tx) {
         if (!db.objectStoreNames.contains('panels')) {
           const panelStore = db.createObjectStore('panels', { keyPath: 'id' });
@@ -62,6 +103,18 @@ export async function getDB() {
         if (!db.objectStoreNames.contains('audio_tracks')) {
           const audioStore = db.createObjectStore('audio_tracks', { keyPath: 'id' });
           audioStore.createIndex('by-order', 'order');
+        }
+
+        // v5: reusable global libraries. Plain id-keyed stores — no migration of
+        // existing data is needed because they start empty.
+        if (!db.objectStoreNames.contains('library_images')) {
+          db.createObjectStore('library_images', { keyPath: 'id' });
+        }
+        if (!db.objectStoreNames.contains('library_documents')) {
+          db.createObjectStore('library_documents', { keyPath: 'id' });
+        }
+        if (!db.objectStoreNames.contains('library_instructions')) {
+          db.createObjectStore('library_instructions', { keyPath: 'id' });
         }
 
         if (oldVersion < 2) {
@@ -230,14 +283,72 @@ export const dbApi = {
     await tx.done;
   },
 
-  // Wipes ALL projects, panels and audio. Used when the signed-in user changes
-  // on a shared browser so one account can never see another's local content.
+  // ---- Image library (global) ----
+  async getLibraryImages(): Promise<LibraryImage[]> {
+    const db = await getDB();
+    const items = await db.getAll('library_images');
+    return items.sort((a, b) => b.createdAt - a.createdAt);
+  },
+
+  async saveLibraryImage(item: LibraryImage): Promise<void> {
+    const db = await getDB();
+    await db.put('library_images', item);
+  },
+
+  async deleteLibraryImage(id: string): Promise<void> {
+    const db = await getDB();
+    await db.delete('library_images', id);
+  },
+
+  // ---- Document library (global) ----
+  async getLibraryDocuments(): Promise<LibraryDocument[]> {
+    const db = await getDB();
+    const items = await db.getAll('library_documents');
+    return items.sort((a, b) => b.createdAt - a.createdAt);
+  },
+
+  async saveLibraryDocument(item: LibraryDocument): Promise<void> {
+    const db = await getDB();
+    await db.put('library_documents', item);
+  },
+
+  async deleteLibraryDocument(id: string): Promise<void> {
+    const db = await getDB();
+    await db.delete('library_documents', id);
+  },
+
+  // ---- Instruction library (global) ----
+  async getLibraryInstructions(): Promise<LibraryInstruction[]> {
+    const db = await getDB();
+    const items = await db.getAll('library_instructions');
+    return items.sort((a, b) => b.createdAt - a.createdAt);
+  },
+
+  async saveLibraryInstruction(item: LibraryInstruction): Promise<void> {
+    const db = await getDB();
+    await db.put('library_instructions', item);
+  },
+
+  async deleteLibraryInstruction(id: string): Promise<void> {
+    const db = await getDB();
+    await db.delete('library_instructions', id);
+  },
+
+  // Wipes ALL projects, panels, audio and libraries. Used when the signed-in
+  // user changes on a shared browser so one account can never see another's
+  // local content.
   async clearAllData(): Promise<void> {
     const db = await getDB();
-    const tx = db.transaction(['projects', 'panels', 'audio_tracks'], 'readwrite');
+    const tx = db.transaction(
+      ['projects', 'panels', 'audio_tracks', 'library_images', 'library_documents', 'library_instructions'],
+      'readwrite',
+    );
     await tx.objectStore('projects').clear();
     await tx.objectStore('panels').clear();
     await tx.objectStore('audio_tracks').clear();
+    await tx.objectStore('library_images').clear();
+    await tx.objectStore('library_documents').clear();
+    await tx.objectStore('library_instructions').clear();
     await tx.done;
   },
 };

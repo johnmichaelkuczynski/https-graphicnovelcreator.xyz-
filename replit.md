@@ -23,7 +23,10 @@ A browser-based studio for assembling graphic novels from your own uploaded imag
 ## Where things live
 
 - `artifacts/graphic-novel/` — the React + Vite studio (web app, served at `/`).
-  - `src/lib/db.ts` — IndexedDB schema (projects / panels / audio_tracks), source of truth for the data model.
+  - `src/lib/db.ts` — IndexedDB schema (projects / panels / audio_tracks + the three global cross-project libraries: library_images / library_documents / library_instructions), source of truth for the data model.
+  - `src/hooks/use-library.ts` — react-query hooks (query/save/delete) for the three cross-project libraries.
+  - `src/pages/Library.tsx` — the `/library` page (3 tabs: Images / Documents / Instructions) for uploading/writing and managing reusable assets.
+  - `src/components/LibraryImagePicker.tsx` — Studio "Add Panels → From Library" picker that adds saved library images as panels.
   - `src/lib/ai-client.ts` — Text→Novel conversion logic (script + image generation, style consistency) plus `editImage()` (image-to-image; downscales client-side, posts raw PNG). Talks only to our own `/api/ai/*`; no provider/keys client-side.
   - `src/components/EditImageDialog.tsx` — "Edit Photo" feature: upload an image, describe the change in plain words, strength slider, then add result as a panel / download / re-edit.
   - `src/lib/style-presets.ts` — drawing-style presets (incl. token-light `stick`).
@@ -49,6 +52,8 @@ Graphic Novel Creator is a browser studio with two ways to build a novel:
 2. **Text → Graphic Novel (AI)** — paste source text, describe the desired output, pick a drawing style (presets including a cheap token-light stick-figure mode), set panel count and per-panel duration, optionally add audio, and CONVERT into a fully generated novel with a consistent art style across all panels.
 
 Per panel, users can attach an optional dedicated audio track that plays over the sequence soundtrack.
+
+A `/library` page provides three persistent, cross-project libraries — Images, Documents, and Instructions (reusable "turn it into…" prompts) — so users upload or write once and reuse everywhere: library images can be added as panels from the Studio "Add Panels" menu, and saved documents/instructions can be loaded into (or saved from) the Text → Graphic Novel dialog.
 
 ## User preferences
 

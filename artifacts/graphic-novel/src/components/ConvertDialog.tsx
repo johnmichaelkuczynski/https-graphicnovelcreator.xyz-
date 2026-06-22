@@ -6,12 +6,19 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { Wand2, Loader2, Music, AlertTriangle, Upload } from 'lucide-react';
+import { Wand2, Loader2, Music, AlertTriangle, Upload, Library as LibraryIcon, Save, Check } from 'lucide-react';
+import {
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu';
 import { extractTextFromFile, ACCEPTED_TEXT_TYPES } from '@/lib/text-extract';
 import { STYLE_PRESETS, getStylePreset } from '@/lib/style-presets';
 import { convertTextToNovel, ConvertProgress } from '@/lib/ai-client';
 import { useProjectContext } from '@/lib/project-context';
 import { useCreateProject } from '@/hooks/use-projects';
+import {
+  useLibraryDocuments, useSaveLibraryDocument,
+  useLibraryInstructions, useSaveLibraryInstruction,
+} from '@/hooks/use-library';
 import { dbApi } from '@/lib/db';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -25,6 +32,13 @@ export function ConvertDialog({
   const { setCurrentProjectId } = useProjectContext();
   const createProject = useCreateProject();
   const qc = useQueryClient();
+
+  const { data: libraryDocs = [] } = useLibraryDocuments();
+  const saveLibraryDoc = useSaveLibraryDocument();
+  const { data: libraryInstructions = [] } = useLibraryInstructions();
+  const saveLibraryInstruction = useSaveLibraryInstruction();
+  const [savedDoc, setSavedDoc] = useState(false);
+  const [savedInstruction, setSavedInstruction] = useState(false);
 
   const [sourceText, setSourceText] = useState('');
   const [outputSpec, setOutputSpec] = useState('');
@@ -85,6 +99,45 @@ export function ConvertDialog({
     } finally {
       setExtracting(false);
     }
+  };
+
+  const loadLibraryDoc = (id: string) => {
+    const doc = libraryDocs.find((d) => d.id === id);
+    if (!doc) return;
+    setSourceText((prev) => (prev.trim() ? `${prev.trim()}\n\n${doc.text}` : doc.text));
+    setUploadedName(doc.name);
+  };
+
+  const handleSaveDocToLibrary = async () => {
+    if (!sourceText.trim()) return;
+    const name = uploadedName || `Source ${new Date().toLocaleDateString()}`;
+    await saveLibraryDoc.mutateAsync({
+      id: crypto.randomUUID(),
+      name,
+      text: sourceText.trim(),
+      createdAt: Date.now(),
+    });
+    setSavedDoc(true);
+    setTimeout(() => setSavedDoc(false), 2000);
+  };
+
+  const loadLibraryInstruction = (id: string) => {
+    const ins = libraryInstructions.find((i) => i.id === id);
+    if (!ins) return;
+    setOutputSpec(ins.text);
+  };
+
+  const handleSaveInstructionToLibrary = async () => {
+    if (!outputSpec.trim()) return;
+    const title = outputSpec.trim().slice(0, 40);
+    await saveLibraryInstruction.mutateAsync({
+      id: crypto.randomUUID(),
+      title,
+      text: outputSpec.trim(),
+      createdAt: Date.now(),
+    });
+    setSavedInstruction(true);
+    setTimeout(() => setSavedInstruction(false), 2000);
   };
 
   const style = getStylePreset(styleId);
@@ -177,7 +230,7 @@ export function ConvertDialog({
         <div className="flex flex-col gap-5 py-2">
           {/* Source text */}
           <div className="flex flex-col gap-2">
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
               <Label className="font-black uppercase text-xs">Source text</Label>
               <input
                 ref={docRef}
@@ -186,20 +239,69 @@ export function ConvertDialog({
                 className="hidden"
                 onChange={handleDocUpload}
               />
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="border-2 border-border font-bold text-xs"
-                onClick={() => docRef.current?.click()}
-                disabled={busy || extracting}
-              >
-                {extracting ? (
-                  <><Loader2 className="w-3 h-3 mr-1 animate-spin" /> Reading…</>
-                ) : (
-                  <><Upload className="w-3 h-3 mr-1" /> Upload PDF / Word (.docx) / TXT</>
-                )}
-              </Button>
+              <div className="flex items-center gap-2 flex-wrap">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="border-2 border-border font-bold text-xs"
+                      disabled={busy}
+                    >
+                      <LibraryIcon className="w-3 h-3 mr-1" /> From Library
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-72 border-2 border-border max-h-64 overflow-y-auto">
+                    <DropdownMenuLabel className="font-black uppercase text-xs">Saved documents</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    {libraryDocs.length === 0 ? (
+                      <div className="px-2 py-3 text-xs text-muted-foreground font-medium">
+                        No saved documents yet. Upload one in your Library.
+                      </div>
+                    ) : (
+                      libraryDocs.map((d) => (
+                        <DropdownMenuItem
+                          key={d.id}
+                          onClick={() => loadLibraryDoc(d.id)}
+                          className="font-bold cursor-pointer"
+                        >
+                          <span className="truncate">{d.name}</span>
+                        </DropdownMenuItem>
+                      ))
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="border-2 border-border font-bold text-xs"
+                  onClick={handleSaveDocToLibrary}
+                  disabled={busy || !sourceText.trim()}
+                  title="Save the current source text to your library"
+                >
+                  {savedDoc ? (
+                    <><Check className="w-3 h-3 mr-1" /> Saved</>
+                  ) : (
+                    <><Save className="w-3 h-3 mr-1" /> Save to Library</>
+                  )}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="border-2 border-border font-bold text-xs"
+                  onClick={() => docRef.current?.click()}
+                  disabled={busy || extracting}
+                >
+                  {extracting ? (
+                    <><Loader2 className="w-3 h-3 mr-1 animate-spin" /> Reading…</>
+                  ) : (
+                    <><Upload className="w-3 h-3 mr-1" /> Upload</>
+                  )}
+                </Button>
+              </div>
             </div>
             <Textarea
               value={sourceText}
@@ -218,7 +320,58 @@ export function ConvertDialog({
 
           {/* Output spec */}
           <div className="flex flex-col gap-2">
-            <Label className="font-black uppercase text-xs">Turn it into…</Label>
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <Label className="font-black uppercase text-xs">Turn it into…</Label>
+              <div className="flex items-center gap-2 flex-wrap">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="border-2 border-border font-bold text-xs"
+                      disabled={busy}
+                    >
+                      <LibraryIcon className="w-3 h-3 mr-1" /> From Library
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-72 border-2 border-border max-h-64 overflow-y-auto">
+                    <DropdownMenuLabel className="font-black uppercase text-xs">Saved instructions</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    {libraryInstructions.length === 0 ? (
+                      <div className="px-2 py-3 text-xs text-muted-foreground font-medium">
+                        No saved instructions yet. Add one in your Library.
+                      </div>
+                    ) : (
+                      libraryInstructions.map((i) => (
+                        <DropdownMenuItem
+                          key={i.id}
+                          onClick={() => loadLibraryInstruction(i.id)}
+                          className="font-bold cursor-pointer"
+                        >
+                          <span className="truncate">{i.title}</span>
+                        </DropdownMenuItem>
+                      ))
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="border-2 border-border font-bold text-xs"
+                  onClick={handleSaveInstructionToLibrary}
+                  disabled={busy || !outputSpec.trim()}
+                  title="Save this instruction to your library for reuse"
+                >
+                  {savedInstruction ? (
+                    <><Check className="w-3 h-3 mr-1" /> Saved</>
+                  ) : (
+                    <><Save className="w-3 h-3 mr-1" /> Save to Library</>
+                  )}
+                </Button>
+              </div>
+            </div>
             <Textarea
               value={outputSpec}
               onChange={(e) => setOutputSpec(e.target.value)}

@@ -24,6 +24,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 import Studio from "@/pages/Studio";
+import Library from "@/pages/Library";
 import Landing from "@/pages/Landing";
 import { ProjectProvider, STORAGE_KEY } from "@/lib/project-context";
 import { dbApi } from "@/lib/db";
@@ -135,6 +136,19 @@ function HomeRedirect() {
   );
 }
 
+function LibraryRoute() {
+  return (
+    <>
+      <Show when="signed-in">
+        <Library />
+      </Show>
+      <Show when="signed-out">
+        <Landing />
+      </Show>
+    </>
+  );
+}
+
 function ClerkQueryClientCacheInvalidator() {
   const { addListener } = useClerk();
   const qc = useQueryClient();
@@ -193,6 +207,7 @@ function ClerkProviderWithRoutes() {
           <ProjectProvider>
             <Switch>
               <Route path="/" component={HomeRedirect} />
+              <Route path="/library" component={LibraryRoute} />
               <Route path="/sign-in/*?" component={SignInPage} />
               <Route path="/sign-up/*?" component={SignUpPage} />
               <Route component={NotFound} />
