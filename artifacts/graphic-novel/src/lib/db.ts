@@ -105,5 +105,25 @@ export const dbApi = {
       }
     }
     await tx.done;
+  },
+
+  async clearAll(): Promise<void> {
+    const db = await getDB();
+    const tx = db.transaction(['panels', 'audio_tracks'], 'readwrite');
+    await tx.objectStore('panels').clear();
+    await tx.objectStore('audio_tracks').clear();
+    await tx.done;
+  },
+
+  async replaceAll(panels: Panel[], tracks: AudioTrack[]): Promise<void> {
+    const db = await getDB();
+    const tx = db.transaction(['panels', 'audio_tracks'], 'readwrite');
+    const panelStore = tx.objectStore('panels');
+    const audioStore = tx.objectStore('audio_tracks');
+    await panelStore.clear();
+    await audioStore.clear();
+    for (const p of panels) await panelStore.put(p);
+    for (const t of tracks) await audioStore.put(t);
+    await tx.done;
   }
 };
