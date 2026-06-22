@@ -27,7 +27,8 @@ A browser-based studio for assembling graphic novels from your own uploaded imag
   - `src/lib/ai-client.ts` — Text→Novel conversion logic (script + image generation, style consistency) plus `editImage()` (image-to-image; downscales client-side, posts raw PNG). Talks only to our own `/api/ai/*`; no provider/keys client-side.
   - `src/components/EditImageDialog.tsx` — "Edit Photo" feature: upload an image, describe the change in plain words, strength slider, then add result as a panel / download / re-edit.
   - `src/lib/style-presets.ts` — drawing-style presets (incl. token-light `stick`).
-  - `src/lib/export.ts` — PDF + video export, including audio mixing.
+  - `src/lib/export.ts` — PDF + video export. Video uses deterministic WebCodecs (`renderVideoBlob`) + `webm-muxer`, with offline audio mixing; `MediaRecorder` only as a fallback for browsers without `VideoEncoder`.
+  - `src/lib/diagnostics.ts` + `src/components/DiagnosticsDialog.tsx` — "Self-Test" button: synthetically builds novels, exports video, and decodes the result to verify duration + that every panel is present (no freeze).
   - `src/components/ConvertDialog.tsx` — the Text→Novel form (incl. PDF/.docx/TXT upload into source text).
   - `src/lib/text-extract.ts` — client-side document text extraction (pdfjs-dist + mammoth, lazy-loaded).
   - `src/components/SpeakControl.tsx` — per-panel ElevenLabs character voice picker.

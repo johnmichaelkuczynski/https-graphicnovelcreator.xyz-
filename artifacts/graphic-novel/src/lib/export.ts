@@ -1,5 +1,6 @@
 import { jsPDF } from 'jspdf';
 import fixWebmDuration from 'fix-webm-duration';
+import { Muxer, ArrayBufferTarget } from 'webm-muxer';
 import { Panel, AudioTrack } from './db';
 
 export function downloadBlob(blob: Blob, filename: string) {
@@ -108,20 +109,6 @@ export async function exportPdf(panels: Panel[], projectName: string) {
   pdf.save(`${safeName(projectName) || 'graphic-novel'}.pdf`);
 }
 
-function pickVideoMime(): string {
-  const candidates = [
-    'video/mp4;codecs=h264,aac',
-    'video/mp4',
-    'video/webm;codecs=vp9,opus',
-    'video/webm;codecs=vp8,opus',
-    'video/webm',
-  ];
-  for (const c of candidates) {
-    if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(c)) return c;
-  }
-  return '';
-}
-
 function drawPanelFrame(
   ctx: CanvasRenderingContext2D,
   W: number,
@@ -172,14 +159,277 @@ function drawPanelFrame(
   }
 }
 
-export async function exportVideo(
+export function totalDurationSec(panels: Panel[]): number {
+  return panels.reduce((sum, p) => sum + Math.max(0.5, p.durationSeconds), 0);
+}
+
+// ---------------------------------------------------------------------------
+// Video export.
+//
+// The reliable path is WebCodecs: every frame is encoded as fast as the CPU
+// allows, completely decoupled from the wall clock and from whether the tab is
+// focused. This is what fixes the "frozen on panel N" / "only the first third"
+// failures — a real-time canvas captureStream stops compositing when the
+// preview loses focus, so it can never be made robust for long exports.
+// MediaRecorder is kept only as a fallback for browsers without WebCodecs.
+// ---------------------------------------------------------------------------
+
+// Video and audio capabilities are checked independently: a browser that can
+// encode video via WebCodecs but lacks the audio APIs should still use the
+// robust deterministic video path (just without an audio track) rather than
+// falling back to the fragile real-time recorder.
+function supportsWebCodecsVideo(): boolean {
+  return typeof VideoEncoder !== 'undefined' && typeof VideoFrame !== 'undefined';
+}
+
+function supportsWebCodecsAudio(): boolean {
+  return (
+    typeof AudioEncoder !== 'undefined' &&
+    typeof AudioData !== 'undefined' &&
+    typeof OfflineAudioContext !== 'undefined'
+  );
+}
+
+async function pickWebCodecsVideoCodec(
+  W: number,
+  H: number,
+  fps: number,
+): Promise<{ enc: string; mux: string } | null> {
+  const candidates = [
+    { enc: 'vp09.00.10.08', mux: 'V_VP9' },
+    { enc: 'vp8', mux: 'V_VP8' },
+  ];
+  for (const c of candidates) {
+    try {
+      const support = await VideoEncoder.isConfigSupported({
+        codec: c.enc,
+        width: W,
+        height: H,
+        bitrate: 5_000_000,
+        framerate: fps,
+      });
+      if (support.supported) return c;
+    } catch {
+      // try next candidate
+    }
+  }
+  return null;
+}
+
+// Mix sequence-wide tracks (back-to-back from t=0) and per-panel tracks (each at
+// the moment its panel appears) into a single stereo buffer using an offline
+// context, so audio is rendered deterministically and never depends on playback.
+async function mixAudioOffline(
   panels: Panel[],
   tracks: AudioTrack[],
-  projectName: string,
-  onProgress?: (fraction: number) => void,
-): Promise<void> {
-  if (panels.length === 0) return;
+  sampleRate: number,
+): Promise<AudioBuffer | null> {
+  const hasPanelAudio = panels.some((p) => p.audioBlob);
+  if (tracks.length === 0 && !hasPanelAudio) return null;
 
+  const totalSec = totalDurationSec(panels);
+  const length = Math.max(1, Math.ceil(totalSec * sampleRate));
+  const offline = new OfflineAudioContext(2, length, sampleRate);
+
+  const decode = async (blob: Blob) => offline.decodeAudioData(await blob.arrayBuffer());
+
+  let started = false;
+
+  let offset = 0;
+  for (const t of tracks) {
+    try {
+      const dec = await decode(t.audioBlob);
+      const src = offline.createBufferSource();
+      src.buffer = dec;
+      src.connect(offline.destination);
+      src.start(offset);
+      offset += dec.duration;
+      started = true;
+    } catch {
+      // skip tracks that can't be decoded
+    }
+  }
+
+  let acc = 0;
+  for (let i = 0; i < panels.length; i++) {
+    const pa = panels[i].audioBlob;
+    if (pa) {
+      try {
+        const dec = await decode(pa);
+        const src = offline.createBufferSource();
+        src.buffer = dec;
+        src.connect(offline.destination);
+        src.start(acc);
+        started = true;
+      } catch {
+        // skip panel audio that can't be decoded
+      }
+    }
+    acc += Math.max(0.5, panels[i].durationSeconds);
+  }
+
+  if (!started) return null;
+  return offline.startRendering();
+}
+
+async function renderVideoWebCodecs(
+  panels: Panel[],
+  tracks: AudioTrack[],
+  codec: { enc: string; mux: string },
+  onProgress?: (fraction: number) => void,
+): Promise<Blob> {
+  const W = 1280;
+  const H = 960;
+  const canvas = document.createElement('canvas');
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext('2d')!;
+
+  const images = await Promise.all(panels.map((p) => blobToImage(p.imageBlob)));
+
+  const fps = 15;
+  const frameDurUs = Math.round(1_000_000 / fps);
+
+  const sampleRate = 48_000;
+  // Audio is best-effort: if the browser lacks audio WebCodecs/offline mixing,
+  // or the Opus config isn't supported, we still produce a correct (silent)
+  // video rather than degrading to the fragile real-time recorder.
+  let audioBuffer: AudioBuffer | null = null;
+  if (supportsWebCodecsAudio()) {
+    try {
+      const support = await AudioEncoder.isConfigSupported({
+        codec: 'opus',
+        numberOfChannels: 2,
+        sampleRate,
+        bitrate: 128_000,
+      });
+      if (support.supported) {
+        audioBuffer = await mixAudioOffline(panels, tracks, sampleRate);
+      }
+    } catch {
+      audioBuffer = null;
+    }
+  }
+
+  const muxer = new Muxer({
+    target: new ArrayBufferTarget(),
+    video: { codec: codec.mux, width: W, height: H, frameRate: fps },
+    audio: audioBuffer
+      ? { codec: 'A_OPUS', numberOfChannels: 2, sampleRate }
+      : undefined,
+    firstTimestampBehavior: 'offset',
+  });
+
+  let encodeError: unknown = null;
+  const videoEncoder = new VideoEncoder({
+    output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+    error: (e) => {
+      encodeError = e;
+    },
+  });
+  try {
+    videoEncoder.configure({
+      codec: codec.enc,
+      width: W,
+      height: H,
+      bitrate: 5_000_000,
+      framerate: fps,
+    });
+
+    let tUs = 0;
+    for (let i = 0; i < panels.length; i++) {
+      drawPanelFrame(ctx, W, H, images[i], panels[i].caption);
+      const durSec = Math.max(0.5, panels[i].durationSeconds);
+      const nFrames = Math.max(1, Math.round(durSec * fps));
+      for (let f = 0; f < nFrames; f++) {
+        if (encodeError) throw encodeError;
+        const frame = new VideoFrame(canvas, { timestamp: tUs, duration: frameDurUs });
+        videoEncoder.encode(frame, { keyFrame: f === 0 });
+        frame.close();
+        tUs += frameDurUs;
+        // Backpressure so we don't queue thousands of frames at once.
+        while (videoEncoder.encodeQueueSize > 20) {
+          await new Promise<void>((r) => setTimeout(r, 0));
+          if (encodeError) throw encodeError;
+        }
+      }
+      onProgress?.(((i + 1) / panels.length) * (audioBuffer ? 0.8 : 0.95));
+    }
+    await videoEncoder.flush();
+    if (encodeError) throw encodeError;
+  } finally {
+    if (videoEncoder.state !== 'closed') videoEncoder.close();
+  }
+
+  if (audioBuffer) {
+    let audioError: unknown = null;
+    const audioEncoder = new AudioEncoder({
+      output: (chunk, meta) => muxer.addAudioChunk(chunk, meta),
+      error: (e) => {
+        audioError = e;
+      },
+    });
+    try {
+      audioEncoder.configure({
+        codec: 'opus',
+        numberOfChannels: 2,
+        sampleRate,
+        bitrate: 128_000,
+      });
+
+      const numChannels = 2;
+      const ch0 = audioBuffer.getChannelData(0);
+      const ch1 = audioBuffer.numberOfChannels > 1 ? audioBuffer.getChannelData(1) : ch0;
+      const chunkFrames = Math.round(sampleRate * 0.1); // 100ms blocks
+      for (let i = 0; i < audioBuffer.length; i += chunkFrames) {
+        if (audioError) throw audioError;
+        const n = Math.min(chunkFrames, audioBuffer.length - i);
+        const data = new Float32Array(n * numChannels);
+        data.set(ch0.subarray(i, i + n), 0);
+        data.set(ch1.subarray(i, i + n), n);
+        const ad = new AudioData({
+          format: 'f32-planar',
+          sampleRate,
+          numberOfFrames: n,
+          numberOfChannels: numChannels,
+          timestamp: Math.round((i / sampleRate) * 1_000_000),
+          data,
+        });
+        audioEncoder.encode(ad);
+        ad.close();
+        onProgress?.(0.8 + (i / audioBuffer.length) * 0.18);
+      }
+      await audioEncoder.flush();
+      if (audioError) throw audioError;
+    } finally {
+      if (audioEncoder.state !== 'closed') audioEncoder.close();
+    }
+  }
+
+  muxer.finalize();
+  onProgress?.(1);
+  return new Blob([muxer.target.buffer], { type: 'video/webm' });
+}
+
+// ---- Fallback: real-time MediaRecorder (only when WebCodecs is unavailable) --
+
+function pickVideoMime(): string {
+  const candidates = [
+    'video/webm;codecs=vp9,opus',
+    'video/webm;codecs=vp8,opus',
+    'video/webm',
+  ];
+  for (const c of candidates) {
+    if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(c)) return c;
+  }
+  return '';
+}
+
+async function renderVideoMediaRecorder(
+  panels: Panel[],
+  tracks: AudioTrack[],
+  onProgress?: (fraction: number) => void,
+): Promise<{ blob: Blob; ext: string }> {
   const W = 1280;
   const H = 960;
   const canvas = document.createElement('canvas');
@@ -192,8 +442,6 @@ export async function exportVideo(
   const fps = 30;
   const stream = canvas.captureStream(fps);
 
-  // Per-panel start offsets (seconds) so panel-specific audio can be scheduled
-  // at the moment its panel appears.
   const panelStartSec: number[] = [];
   {
     let acc = 0;
@@ -205,11 +453,8 @@ export async function exportVideo(
 
   const hasPanelAudio = panels.some((p) => p.audioBlob);
 
-  // Decode all audio tracks up front (do NOT start them yet — scheduling
-  // must happen after the recorder starts, or early audio is lost).
   let audioCtx: AudioContext | null = null;
   let decodedBuffers: AudioBuffer[] = [];
-  // Panel audio decoded buffers keyed by panel index.
   const decodedPanelBuffers: { startSec: number; buffer: AudioBuffer }[] = [];
   let audioDest: MediaStreamAudioDestinationNode | null = null;
   if (tracks.length > 0 || hasPanelAudio) {
@@ -218,22 +463,21 @@ export async function exportVideo(
       audioDest = audioCtx.createMediaStreamDestination();
       for (const track of tracks) {
         try {
-          const buf = await track.audioBlob.arrayBuffer();
-          const decoded = await audioCtx.decodeAudioData(buf);
-          decodedBuffers.push(decoded);
+          decodedBuffers.push(await audioCtx.decodeAudioData(await track.audioBlob.arrayBuffer()));
         } catch {
-          // skip tracks that can't be decoded
+          // skip
         }
       }
       for (let i = 0; i < panels.length; i++) {
         const pa = panels[i].audioBlob;
         if (!pa) continue;
         try {
-          const buf = await pa.arrayBuffer();
-          const decoded = await audioCtx.decodeAudioData(buf);
-          decodedPanelBuffers.push({ startSec: panelStartSec[i], buffer: decoded });
+          decodedPanelBuffers.push({
+            startSec: panelStartSec[i],
+            buffer: await audioCtx.decodeAudioData(await pa.arrayBuffer()),
+          });
         } catch {
-          // skip panel audio that can't be decoded
+          // skip
         }
       }
       audioDest.stream.getAudioTracks().forEach((t) => stream.addTrack(t));
@@ -252,9 +496,7 @@ export async function exportVideo(
     if (e.data && e.data.size > 0) chunks.push(e.data);
   };
 
-  const totalMs = panels.reduce((sum, p) => sum + Math.max(0.5, p.durationSeconds) * 1000, 0);
-
-  // Cumulative panel-boundary times in ms, used to map elapsed time -> panel.
+  const totalMs = totalDurationSec(panels) * 1000;
   const boundariesMs: number[] = [];
   {
     let acc = 0;
@@ -264,7 +506,7 @@ export async function exportVideo(
     }
   }
 
-  return new Promise<void>((resolve) => {
+  return new Promise<{ blob: Blob; ext: string }>((resolve) => {
     let drawTimer: ReturnType<typeof setInterval> | null = null;
     let stopTimer: ReturnType<typeof setTimeout> | null = null;
     let stopped = false;
@@ -281,7 +523,6 @@ export async function exportVideo(
       if (stopped) return;
       stopped = true;
       cleanupTimers();
-      // Draw the final panel one last time so the tail isn't a stale frame.
       drawPanelFrame(ctx, W, H, images[images.length - 1], panels[panels.length - 1].caption);
       if (recorder.state !== 'inactive') recorder.stop();
     };
@@ -289,31 +530,22 @@ export async function exportVideo(
     recorder.onstop = async () => {
       cleanupTimers();
       const type = mime || 'video/webm';
-      const ext = type.includes('mp4') ? 'mp4' : 'webm';
       const actualMs = startTime ? performance.now() - startTime : totalMs;
       let blob = new Blob(chunks, { type });
-      // Chrome's MediaRecorder writes WebM without a valid duration header, so
-      // players only play a fraction of the file. Patch the duration in.
-      if (ext === 'webm') {
-        try {
-          blob = await fixWebmDuration(blob, Math.round(actualMs), { logger: false });
-        } catch {
-          // fall back to the unpatched blob
-        }
+      try {
+        blob = await fixWebmDuration(blob, Math.round(actualMs), { logger: false });
+      } catch {
+        // keep unpatched blob
       }
-      downloadBlob(blob, `${safeName(projectName) || 'graphic-novel'}.${ext}`);
       if (audioCtx) audioCtx.close().catch(() => {});
       onProgress?.(1);
-      resolve();
+      resolve({ blob, ext: 'webm' });
     };
 
-    // Flush a chunk every second so a long recording isn't held as one blob.
     recorder.start(1000);
 
-    // Now that recording has begun, schedule the decoded audio.
     if (audioCtx && audioDest) {
       const base = audioCtx.currentTime + 0.1;
-      // Sequence-wide tracks play back-to-back from the start.
       let offset = 0;
       for (const decoded of decodedBuffers) {
         const src = audioCtx.createBufferSource();
@@ -322,7 +554,6 @@ export async function exportVideo(
         src.start(base + offset);
         offset += decoded.duration;
       }
-      // Per-panel tracks play at the moment their panel appears, layered on top.
       for (const { startSec, buffer } of decodedPanelBuffers) {
         const src = audioCtx.createBufferSource();
         src.buffer = buffer;
@@ -333,14 +564,9 @@ export async function exportVideo(
 
     startTime = performance.now();
 
-    // Draw via setInterval (not requestAnimationFrame): rAF is fully paused when
-    // the tab/preview loses focus, which would freeze the video partway through.
-    // Timers keep firing in the background (throttled to ~1s, which is fine since
-    // panels last whole seconds), so every panel makes it into the recording.
     const draw = () => {
       const elapsed = performance.now() - startTime;
       onProgress?.(Math.min(0.99, elapsed / totalMs));
-
       let idx = panels.length - 1;
       for (let i = 0; i < boundariesMs.length; i++) {
         if (elapsed < boundariesMs[i]) {
@@ -348,19 +574,50 @@ export async function exportVideo(
           break;
         }
       }
-
-      // Always redraw so the canvas stream stays current even if a panel was
-      // briefly skipped while the tab was throttled in the background.
       drawPanelFrame(ctx, W, H, images[idx], panels[idx].caption);
-
       if (elapsed >= totalMs) stopRecording();
     };
 
-    // Draw the first frame immediately, then keep the canvas in sync.
     draw();
     drawTimer = setInterval(draw, 200);
-    // Independent wall-clock stop so the recording always ends even if the draw
-    // loop is throttled in the background.
     stopTimer = setTimeout(stopRecording, totalMs + 400);
   });
+}
+
+// Renders the slideshow to a video Blob (does not download). Used by both the
+// Download menu and the self-test diagnostics.
+export async function renderVideoBlob(
+  panels: Panel[],
+  tracks: AudioTrack[],
+  onProgress?: (fraction: number) => void,
+): Promise<{ blob: Blob; ext: string }> {
+  if (panels.length === 0) throw new Error('No panels to render');
+  // Use the robust deterministic encoder whenever the browser can actually
+  // encode a codec our muxer supports — not merely when the WebCodecs symbols
+  // exist. Some browsers expose VideoEncoder but support neither VP8 nor VP9
+  // (e.g. Safari-class); for those we must fall back to MediaRecorder rather
+  // than hard-failing. Probing the codec up front is the eligibility gate.
+  //
+  // Once we've committed to the WebCodecs path, runtime failures are surfaced
+  // (thrown), NOT silently downgraded to the fragile real-time recorder — that
+  // downgrade is exactly what masked the original "frozen frame" failures.
+  const codec = supportsWebCodecsVideo()
+    ? await pickWebCodecsVideoCodec(1280, 960, 15)
+    : null;
+  if (codec) {
+    const blob = await renderVideoWebCodecs(panels, tracks, codec, onProgress);
+    return { blob, ext: 'webm' };
+  }
+  return renderVideoMediaRecorder(panels, tracks, onProgress);
+}
+
+export async function exportVideo(
+  panels: Panel[],
+  tracks: AudioTrack[],
+  projectName: string,
+  onProgress?: (fraction: number) => void,
+): Promise<void> {
+  if (panels.length === 0) return;
+  const { blob, ext } = await renderVideoBlob(panels, tracks, onProgress);
+  downloadBlob(blob, `${safeName(projectName) || 'graphic-novel'}.${ext}`);
 }
