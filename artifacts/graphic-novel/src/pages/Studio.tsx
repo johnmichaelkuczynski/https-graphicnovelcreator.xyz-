@@ -8,17 +8,22 @@ import { PreviewPlayer } from '@/components/PreviewPlayer';
 import { Button } from '@/components/ui/button';
 import {
   Play, Plus, Upload, Music, Image as ImageIcon, FileText, Film,
-  FolderPlus, Trash2, ChevronDown, Loader2,
+  FolderPlus, Trash2, ChevronDown, Loader2, LogOut,
 } from 'lucide-react';
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuLabel,
 } from '@/components/ui/dropdown-menu';
 import { exportPdf, exportVideo } from '@/lib/export';
 import { useQueryClient } from '@tanstack/react-query';
+import { useUser, useClerk } from '@clerk/react';
+
+const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
 
 export default function Studio() {
   const { projects, currentProjectId, currentProject, setCurrentProjectId, isReady } = useProjectContext();
   const queryClient = useQueryClient();
+  const { user } = useUser();
+  const { signOut } = useClerk();
 
   const { data: panels = [], isLoading: panelsLoading } = usePanels();
   const { data: audioTracks = [] } = useAudioTracks();
@@ -255,6 +260,38 @@ export default function Studio() {
           >
             <Play className="w-4 h-4 mr-2" /> Play
           </Button>
+
+          <div className="w-px h-8 bg-border mx-1"></div>
+
+          {/* Account */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                className="bg-card border-2 border-border brutal-shadow brutal-shadow-hover font-bold gap-2"
+              >
+                <span className="w-6 h-6 bg-primary border-2 border-border flex items-center justify-center text-xs font-black uppercase shrink-0">
+                  {(user?.firstName?.[0] ?? user?.primaryEmailAddress?.emailAddress?.[0] ?? 'U').toUpperCase()}
+                </span>
+                <span className="hidden md:inline max-w-[8rem] truncate">
+                  {user?.firstName ?? user?.primaryEmailAddress?.emailAddress ?? 'Account'}
+                </span>
+                <ChevronDown className="w-4 h-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56 border-2 border-border">
+              <DropdownMenuLabel className="font-black uppercase text-xs truncate">
+                {user?.primaryEmailAddress?.emailAddress ?? 'Signed in'}
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={() => signOut({ redirectUrl: basePath || '/' })}
+                className="font-bold cursor-pointer text-destructive focus:text-destructive"
+              >
+                <LogOut className="w-4 h-4 mr-2" /> Log Out
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </header>
 

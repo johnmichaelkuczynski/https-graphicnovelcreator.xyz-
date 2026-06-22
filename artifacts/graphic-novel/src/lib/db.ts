@@ -221,4 +221,15 @@ export const dbApi = {
     for (const key of audioKeys) await tx.objectStore('audio_tracks').delete(key);
     await tx.done;
   },
+
+  // Wipes ALL projects, panels and audio. Used when the signed-in user changes
+  // on a shared browser so one account can never see another's local content.
+  async clearAllData(): Promise<void> {
+    const db = await getDB();
+    const tx = db.transaction(['projects', 'panels', 'audio_tracks'], 'readwrite');
+    await tx.objectStore('projects').clear();
+    await tx.objectStore('panels').clear();
+    await tx.objectStore('audio_tracks').clear();
+    await tx.done;
+  },
 };

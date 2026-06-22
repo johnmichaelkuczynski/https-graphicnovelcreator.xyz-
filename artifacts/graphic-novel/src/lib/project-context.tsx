@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useRef, useState } from 'r
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { dbApi, Project } from '@/lib/db';
 
-const STORAGE_KEY = 'novel-current-project-id';
+export const STORAGE_KEY = 'novel-current-project-id';
 
 interface ProjectContextValue {
   projects: Project[];
