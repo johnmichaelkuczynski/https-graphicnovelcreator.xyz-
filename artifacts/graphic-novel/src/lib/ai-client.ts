@@ -1,4 +1,3 @@
-import { AiSettings } from './ai-settings';
 import { StylePreset } from './style-presets';
 
 const SCRIPT_URL = '/api/ai/script';
@@ -22,12 +21,7 @@ export interface ConvertProgress {
   message: string;
 }
 
-async function postJson(url: string, body: unknown): Promise<any> {
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
+async function readError(res: Response): Promise<string> {
   const text = await res.text();
   let json: any = {};
   try {
@@ -35,15 +29,27 @@ async function postJson(url: string, body: unknown): Promise<any> {
   } catch {
     json = { error: text };
   }
-  if (!res.ok) {
-    const msg =
-      json?.error?.message ||
-      (typeof json?.error === 'string' ? json.error : null) ||
-      json?.message ||
-      `Request failed (${res.status})`;
-    throw new Error(msg);
+  return (
+    json?.error?.message ||
+    (typeof json?.error === 'string' ? json.error : null) ||
+    json?.message ||
+    `Request failed (${res.status})`
+  );
+}
+
+async function postJson(url: string, body: unknown): Promise<any> {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(await readError(res));
+  const text = await res.text();
+  try {
+    return text ? JSON.parse(text) : {};
+  } catch {
+    return {};
   }
-  return json;
 }
 
 // Pull a JSON object out of a model response that may be wrapped in prose or
@@ -72,7 +78,6 @@ function extractJson(content: string): any {
 }
 
 export async function generateScript(
-  settings: AiSettings,
   sourceText: string,
   outputSpec: string,
   panelCount: number,
@@ -89,23 +94,16 @@ export async function generateScript(
   const user = `DESIRED OUTPUT (what the story should become):\n${outputSpec}\n\nSOURCE TEXT:\n${sourceText}`;
 
   const json = await postJson(SCRIPT_URL, {
-    baseUrl: settings.baseUrl,
-    apiKey: settings.apiKey,
-    model: settings.chatModel,
     temperature: 0.85,
-    response_format: { type: 'json_object' },
     messages: [
       { role: 'system', content: system },
       { role: 'user', content: user },
     ],
   });
 
-  const content: string =
-    json?.choices?.[0]?.message?.content ??
-    json?.choices?.[0]?.text ??
-    '';
+  const content: string = typeof json?.content === 'string' ? json.content : '';
   if (!content) {
-    throw new Error('The text model returned no content. Check your chat model name and key.');
+    throw new Error('The AI returned no story text. Try again.');
   }
 
   const parsed = extractJson(content);
@@ -138,59 +136,30 @@ export async function generateScript(
   return panels;
 }
 
-function base64ToBlob(b64: string, mime = 'image/png'): Blob {
-  const clean = b64.includes(',') ? b64.split(',')[1] : b64;
-  const byteChars = atob(clean);
-  const bytes = new Uint8Array(byteChars.length);
-  for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
-  return new Blob([bytes], { type: mime });
-}
-
 export async function generateImage(
-  settings: AiSettings,
   prompt: string,
   style: StylePreset,
   seed: number,
 ): Promise<Blob> {
-  const json = await postJson(IMAGE_URL, {
-    baseUrl: settings.baseUrl,
-    apiKey: settings.apiKey,
-    model: settings.imageModel,
-    prompt,
-    seed,
-    width: style.image.width,
-    height: style.image.height,
-    steps: style.image.steps,
-    n: 1,
-    response_format: 'b64_json',
+  // The image route returns raw PNG bytes (the provider lives server-side).
+  const res = await fetch(IMAGE_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      prompt,
+      seed,
+      width: style.image.width,
+      height: style.image.height,
+      steps: style.image.steps,
+    }),
   });
-
-  // Handle the various OpenAI-compatible / provider response shapes.
-  const data = json?.data?.[0] ?? json?.images?.[0] ?? json?.output?.[0];
-
-  // 1) base64 (OpenAI: data[].b64_json; Venice: images[] as base64 strings)
-  const b64 =
-    json?.data?.[0]?.b64_json ??
-    (typeof json?.images?.[0] === 'string' ? json.images[0] : undefined) ??
-    (typeof data === 'string' ? data : undefined) ??
-    data?.b64_json;
-  if (typeof b64 === 'string' && b64.length > 0) {
-    return base64ToBlob(b64);
-  }
-
-  // 2) hosted url
-  const url = json?.data?.[0]?.url ?? data?.url;
-  if (typeof url === 'string' && url.length > 0) {
-    const res = await fetch(url);
-    if (!res.ok) throw new Error('Failed to download the generated image.');
-    return await res.blob();
-  }
-
-  throw new Error('The image model returned no image. Check your image model name.');
+  if (!res.ok) throw new Error(await readError(res));
+  const blob = await res.blob();
+  if (!blob.size) throw new Error('The image provider returned no image. Try again.');
+  return blob;
 }
 
 export interface ConvertParams {
-  settings: AiSettings;
   sourceText: string;
   outputSpec: string;
   style: StylePreset;
@@ -200,10 +169,10 @@ export interface ConvertParams {
 }
 
 export async function convertTextToNovel(params: ConvertParams): Promise<GeneratedPanel[]> {
-  const { settings, sourceText, outputSpec, style, customStyle, panelCount, onProgress } = params;
+  const { sourceText, outputSpec, style, customStyle, panelCount, onProgress } = params;
 
   onProgress?.({ stage: 'script', current: 0, total: panelCount, message: 'Writing the story…' });
-  const script = await generateScript(settings, sourceText, outputSpec, panelCount);
+  const script = await generateScript(sourceText, outputSpec, panelCount);
 
   // The exact same style text is prepended to EVERY panel, and a single fixed
   // seed is reused for all panels, so the drawing style cannot drift.
@@ -219,7 +188,7 @@ export async function convertTextToNovel(params: ConvertParams): Promise<Generat
       message: `Drawing panel ${i + 1} of ${script.length}…`,
     });
     const prompt = styleText ? `${styleText}. SCENE: ${script[i].scene}` : script[i].scene;
-    const imageBlob = await generateImage(settings, prompt, style, seed);
+    const imageBlob = await generateImage(prompt, style, seed);
     results.push({ caption: script[i].caption, scene: script[i].scene, imageBlob });
   }
 

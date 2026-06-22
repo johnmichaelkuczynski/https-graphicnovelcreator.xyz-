@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog';
@@ -6,15 +6,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import {
-  Accordion, AccordionItem, AccordionTrigger, AccordionContent,
-} from '@/components/ui/accordion';
-import { Wand2, Loader2, Settings, Music, KeyRound, AlertTriangle, Upload } from 'lucide-react';
+import { Wand2, Loader2, Music, AlertTriangle, Upload } from 'lucide-react';
 import { extractTextFromFile, ACCEPTED_TEXT_TYPES } from '@/lib/text-extract';
 import { STYLE_PRESETS, getStylePreset } from '@/lib/style-presets';
-import {
-  AiSettings, loadAiSettings, saveAiSettings, PROVIDER_PRESETS,
-} from '@/lib/ai-settings';
 import { convertTextToNovel, ConvertProgress } from '@/lib/ai-client';
 import { useProjectContext } from '@/lib/project-context';
 import { useCreateProject } from '@/hooks/use-projects';
@@ -32,7 +26,6 @@ export function ConvertDialog({
   const createProject = useCreateProject();
   const qc = useQueryClient();
 
-  const [settings, setSettings] = useState<AiSettings>(() => loadAiSettings());
   const [sourceText, setSourceText] = useState('');
   const [outputSpec, setOutputSpec] = useState('');
   const [styleId, setStyleId] = useState('stick');
@@ -48,8 +41,28 @@ export function ConvertDialog({
   const [extracting, setExtracting] = useState(false);
   const [uploadedName, setUploadedName] = useState<string | null>(null);
 
+  // Whether the backend has AI keys configured. undefined = not yet checked.
+  const [ready, setReady] = useState<boolean | undefined>(undefined);
+
   const audioRef = useRef<HTMLInputElement>(null);
   const docRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch('/api/ai/config');
+        const data = r.ok ? await r.json() : null;
+        if (!cancelled) setReady(!!data?.ready);
+      } catch {
+        if (!cancelled) setReady(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
 
   const handleDocUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -74,24 +87,9 @@ export function ConvertDialog({
     }
   };
 
-  const updateSettings = (patch: Partial<AiSettings>) => {
-    setSettings((prev) => {
-      const next = { ...prev, ...patch };
-      saveAiSettings(next);
-      return next;
-    });
-  };
-
-  const applyProvider = (id: string) => {
-    const p = PROVIDER_PRESETS.find((x) => x.id === id);
-    if (!p) return;
-    updateSettings({ baseUrl: p.baseUrl, chatModel: p.chatModel, imageModel: p.imageModel });
-  };
-
   const style = getStylePreset(styleId);
 
   const validate = (): string | null => {
-    if (!settings.apiKey.trim()) return 'Add your API key in AI Provider settings below.';
     if (!sourceText.trim()) return 'Paste the source text you want to convert.';
     if (!outputSpec.trim()) return 'Describe what the output should be.';
     if (styleId === 'custom' && !customStyle.trim()) return 'Describe your custom drawing style.';
@@ -110,7 +108,6 @@ export function ConvertDialog({
     setProgress({ stage: 'script', current: 0, total: panelCount, message: 'Starting…' });
     try {
       const panels = await convertTextToNovel({
-        settings,
         sourceText,
         outputSpec,
         style,
@@ -151,7 +148,7 @@ export function ConvertDialog({
       qc.invalidateQueries({ queryKey: ['audio'] });
       setCurrentProjectId(project.id);
       onOpenChange(false);
-      // reset volatile inputs but keep settings + last choices
+      // reset volatile inputs but keep last choices
       setSourceText('');
       setOutputSpec('');
       setAudioFile(null);
@@ -173,7 +170,7 @@ export function ConvertDialog({
           </DialogTitle>
           <DialogDescription className="font-medium">
             Paste any text, say what it should become, pick a drawing style, and convert.
-            Uses your own AI provider key.
+            The AI is built in — no setup, no keys.
           </DialogDescription>
         </DialogHeader>
 
@@ -322,75 +319,12 @@ export function ConvertDialog({
             </p>
           </div>
 
-          {/* AI provider settings */}
-          <Accordion type="single" collapsible defaultValue={settings.apiKey ? undefined : 'ai'}>
-            <AccordionItem value="ai" className="border-2 border-border">
-              <AccordionTrigger className="px-3 font-black uppercase text-xs">
-                <span className="flex items-center gap-2">
-                  <Settings className="w-4 h-4" /> AI Provider {settings.apiKey ? '✓' : '— add key'}
-                </span>
-              </AccordionTrigger>
-              <AccordionContent className="px-3 flex flex-col gap-3">
-                <div className="flex gap-2 flex-wrap">
-                  {PROVIDER_PRESETS.map((p) => (
-                    <Button
-                      key={p.id}
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="border-2 border-border font-bold text-xs"
-                      onClick={() => applyProvider(p.id)}
-                    >
-                      {p.label}
-                    </Button>
-                  ))}
-                </div>
-                <div className="flex flex-col gap-1">
-                  <Label className="text-xs font-bold flex items-center gap-1">
-                    <KeyRound className="w-3 h-3" /> API key
-                  </Label>
-                  <Input
-                    type="password"
-                    value={settings.apiKey}
-                    onChange={(e) => updateSettings({ apiKey: e.target.value })}
-                    placeholder="Paste your provider API key"
-                    className="border-2 border-border font-mono text-sm"
-                    autoComplete="off"
-                  />
-                </div>
-                <div className="flex flex-col gap-1">
-                  <Label className="text-xs font-bold">Base URL</Label>
-                  <Input
-                    value={settings.baseUrl}
-                    onChange={(e) => updateSettings({ baseUrl: e.target.value })}
-                    className="border-2 border-border font-mono text-sm"
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="flex flex-col gap-1">
-                    <Label className="text-xs font-bold">Text model</Label>
-                    <Input
-                      value={settings.chatModel}
-                      onChange={(e) => updateSettings({ chatModel: e.target.value })}
-                      className="border-2 border-border font-mono text-sm"
-                    />
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <Label className="text-xs font-bold">Image model</Label>
-                    <Input
-                      value={settings.imageModel}
-                      onChange={(e) => updateSettings({ imageModel: e.target.value })}
-                      className="border-2 border-border font-mono text-sm"
-                    />
-                  </div>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Your key is stored only in this browser and sent straight to your provider.
-                  Model names are editable if a default is out of date.
-                </p>
-              </AccordionContent>
-            </AccordionItem>
-          </Accordion>
+          {ready === false && (
+            <div className="flex items-start gap-2 p-3 border-2 border-destructive bg-destructive/10 text-destructive text-sm font-bold">
+              <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+              <span>AI generation isn’t available right now. Try again shortly.</span>
+            </div>
+          )}
 
           {error && (
             <div className="flex items-start gap-2 p-3 border-2 border-destructive bg-destructive/10 text-destructive text-sm font-bold">

@@ -1,8 +1,6 @@
 import { Router, type IRouter } from "express";
 import { getAuth } from "@clerk/express";
 import { z } from "zod";
-import { lookup } from "node:dns/promises";
-import { isIP } from "node:net";
 
 const router: IRouter = Router();
 
@@ -11,131 +9,145 @@ const messageSchema = z.object({
   content: z.string(),
 });
 
+// The client never sends keys, base URLs, or model names. All providers and
+// their keys live here in the backend (env secrets) and are never exposed.
 const scriptSchema = z.object({
-  baseUrl: z.string().url(),
-  apiKey: z.string().min(1),
-  model: z.string().min(1),
   messages: z.array(messageSchema).min(1),
   temperature: z.number().optional(),
   max_tokens: z.number().optional(),
-  response_format: z.unknown().optional(),
 });
 
 const imageSchema = z.object({
-  baseUrl: z.string().url(),
-  apiKey: z.string().min(1),
-  model: z.string().min(1),
   prompt: z.string().min(1),
   negative_prompt: z.string().optional(),
   seed: z.number().optional(),
   width: z.number().optional(),
   height: z.number().optional(),
   steps: z.number().optional(),
-  n: z.number().optional(),
-  response_format: z.string().optional(),
 });
 
-// Returns true when the given IP literal falls in a private, loopback,
-// link-local, or otherwise non-public range (IPv4 or IPv6).
-function isPrivateIp(ip: string): boolean {
-  const v = isIP(ip);
-  if (v === 4) {
-    const parts = ip.split(".").map((p) => parseInt(p, 10));
-    if (parts.length !== 4 || parts.some((n) => Number.isNaN(n))) return true;
-    const [a, b] = parts;
-    if (a === 0) return true; // 0.0.0.0/8
-    if (a === 10) return true; // 10.0.0.0/8
-    if (a === 127) return true; // loopback
-    if (a === 169 && b === 254) return true; // link-local
-    if (a === 172 && b >= 16 && b <= 31) return true; // 172.16/12
-    if (a === 192 && b === 168) return true; // 192.168/16
-    if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT 100.64/10
-    if (a >= 224) return true; // multicast / reserved
-    return false;
-  }
-  if (v === 6) {
-    let h = ip.toLowerCase();
-    // Strip zone id and brackets if present.
-    h = h.replace(/^\[/, "").replace(/\]$/, "").split("%")[0];
-    if (h === "::" || h === "::1") return true; // unspecified / loopback
-    if (h.startsWith("fe80")) return true; // link-local
-    if (h.startsWith("fc") || h.startsWith("fd")) return true; // unique local
-    if (h.startsWith("ff")) return true; // multicast
-    // IPv4-mapped (::ffff:a.b.c.d) — validate the embedded IPv4.
-    const mapped = h.match(/::ffff:(\d+\.\d+\.\d+\.\d+)$/);
-    if (mapped) return isPrivateIp(mapped[1]);
-    return false;
-  }
-  // Not a recognizable IP literal.
-  return true;
-}
+// ---- Fixed backend providers (keys come from env, never the client) ----
+const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
+const ANTHROPIC_MODEL = "claude-sonnet-4-6";
+const VENICE_CHAT_URL = "https://api.venice.ai/api/v1/chat/completions";
+const VENICE_CHAT_MODEL = "llama-3.3-70b";
+const DEZGO_FLUX_URL = "https://api.dezgo.com/text2image_flux";
+const DEZGO_MODEL = "flux_1_schnell";
 
-// SSRF guard: only allow https endpoints whose hostname resolves entirely to
-// public IP addresses. Resolving DNS here defeats public-looking domains that
-// point at internal targets (DNS rebinding / malicious DNS).
-async function isAllowedBaseUrl(raw: string): Promise<boolean> {
-  let url: URL;
-  try {
-    url = new URL(raw);
-  } catch {
-    return false;
-  }
-  if (url.protocol !== "https:") return false;
-  const host = url.hostname.toLowerCase();
-  if (host === "localhost" || host.endsWith(".localhost")) return false;
+type ChatMessage = z.infer<typeof messageSchema>;
 
-  // If the host is already an IP literal, check it directly.
-  if (isIP(host) || isIP(host.replace(/^\[/, "").replace(/\]$/, ""))) {
-    return !isPrivateIp(host.replace(/^\[/, "").replace(/\]$/, ""));
-  }
-
-  // Require a dotted host so bare internal names are rejected.
-  if (!host.includes(".")) return false;
-
-  // Resolve every address the host maps to and require all to be public.
-  try {
-    const addresses = await lookup(host, { all: true });
-    if (addresses.length === 0) return false;
-    return addresses.every((a) => !isPrivateIp(a.address));
-  } catch {
-    return false;
-  }
-}
-
-function joinUrl(base: string, path: string): string {
-  return base.replace(/\/+$/, "") + path;
-}
-
-async function forward(
-  targetUrl: string,
-  apiKey: string,
-  payload: unknown,
+// Generate the story text with Anthropic (Claude).
+async function anthropicChat(
+  messages: ChatMessage[],
+  temperature: number | undefined,
+  maxTokens: number | undefined,
   timeoutMs: number,
-): Promise<{ status: number; body: unknown }> {
+): Promise<string> {
+  const key = process.env.ANTHROPIC_API_KEY;
+  if (!key) throw new Error("anthropic-not-configured");
+
+  const system = messages
+    .filter((m) => m.role === "system")
+    .map((m) => m.content)
+    .join("\n\n");
+  const convo = messages
+    .filter((m) => m.role !== "system")
+    .map((m) => ({ role: m.role, content: m.content }));
+  if (convo.length === 0) convo.push({ role: "user", content: system });
+
+  const body: Record<string, unknown> = {
+    model: ANTHROPIC_MODEL,
+    max_tokens: maxTokens ?? 4096,
+    messages: convo,
+  };
+  if (system) body.system = system;
+  if (typeof temperature === "number") body.temperature = temperature;
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const upstream = await fetch(targetUrl, {
+    const r = await fetch(ANTHROPIC_URL, {
       method: "POST",
       headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
+        "x-api-key": key,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
       },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(body),
       signal: controller.signal,
     });
-    const text = await upstream.text();
-    let body: unknown;
-    try {
-      body = text ? JSON.parse(text) : {};
-    } catch {
-      body = { error: text };
-    }
-    return { status: upstream.status, body };
+    if (!r.ok) throw new Error(`anthropic-${r.status}`);
+    const j = (await r.json()) as { content?: { type: string; text?: string }[] };
+    return (j.content ?? [])
+      .filter((b) => b.type === "text" && typeof b.text === "string")
+      .map((b) => b.text as string)
+      .join("");
   } finally {
     clearTimeout(timer);
   }
 }
+
+// Fallback story generator (Venice, OpenAI-compatible chat).
+async function veniceChat(
+  messages: ChatMessage[],
+  temperature: number | undefined,
+  maxTokens: number | undefined,
+  timeoutMs: number,
+): Promise<string> {
+  const key = process.env.VENICE_API_KEY;
+  if (!key) throw new Error("venice-not-configured");
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const r = await fetch(VENICE_CHAT_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${key}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model: VENICE_CHAT_MODEL,
+        messages,
+        temperature: temperature ?? 0.85,
+        max_tokens: maxTokens ?? 4096,
+      }),
+      signal: controller.signal,
+    });
+    if (!r.ok) throw new Error(`venice-${r.status}`);
+    const j = (await r.json()) as {
+      choices?: { message?: { content?: string }; text?: string }[];
+    };
+    return j.choices?.[0]?.message?.content ?? j.choices?.[0]?.text ?? "";
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Dezgo Flux limits: sizes are multiples of 64 up to 1024; Flux-schnell wants
+// only a few steps. Clamp client-provided sizes so a preset can't break the call.
+function clampDim(n: number | undefined): number {
+  const v = Math.round((n ?? 768) / 64) * 64;
+  return Math.max(256, Math.min(1024, v));
+}
+function clampSteps(n: number | undefined): number {
+  return Math.max(1, Math.min(8, Math.round(n ?? 4)));
+}
+
+// Tells the client whether AI generation is ready (keys present). No secrets,
+// models, or provider details are ever sent to the browser.
+router.get("/ai/config", (req, res) => {
+  const { userId } = getAuth(req);
+  if (!userId) {
+    res.status(401).json({ error: "Sign in to use AI generation." });
+    return;
+  }
+  const ready = !!(
+    (process.env.ANTHROPIC_API_KEY || process.env.VENICE_API_KEY) &&
+    process.env.DEZGO_API_KEY
+  );
+  res.json({ ready });
+});
 
 router.post("/ai/script", async (req, res) => {
   const { userId } = getAuth(req);
@@ -149,24 +161,27 @@ router.post("/ai/script", async (req, res) => {
     res.status(400).json({ error: "Invalid request", details: parsed.error.issues });
     return;
   }
-  const { baseUrl, apiKey, ...rest } = parsed.data;
-  if (!(await isAllowedBaseUrl(baseUrl))) {
-    res.status(400).json({ error: "Provider URL must be a public https endpoint." });
-    return;
+  const { messages, temperature, max_tokens } = parsed.data;
+
+  let content = "";
+  try {
+    content = await anthropicChat(messages, temperature, max_tokens, 120_000);
+  } catch (err) {
+    req.log.warn({ err }, "Anthropic script failed, trying Venice");
+    try {
+      content = await veniceChat(messages, temperature, max_tokens, 120_000);
+    } catch (err2) {
+      req.log.error({ err: err2 }, "AI script generation failed");
+      res.status(502).json({ error: "Could not generate the story. Try again." });
+      return;
+    }
   }
 
-  try {
-    const result = await forward(
-      joinUrl(baseUrl, "/chat/completions"),
-      apiKey,
-      rest,
-      120_000,
-    );
-    res.status(result.status).json(result.body);
-  } catch (err) {
-    req.log.error({ err }, "AI script proxy failed");
-    res.status(502).json({ error: "Could not reach the AI provider." });
+  if (!content.trim()) {
+    res.status(502).json({ error: "The AI returned no story text. Try again." });
+    return;
   }
+  res.json({ content });
 });
 
 router.post("/ai/image", async (req, res) => {
@@ -181,29 +196,51 @@ router.post("/ai/image", async (req, res) => {
     res.status(400).json({ error: "Invalid request", details: parsed.error.issues });
     return;
   }
-  const { baseUrl, apiKey, ...rest } = parsed.data;
-  if (!(await isAllowedBaseUrl(baseUrl))) {
-    res.status(400).json({ error: "Provider URL must be a public https endpoint." });
+  const key = process.env.DEZGO_API_KEY;
+  if (!key) {
+    res.status(503).json({ error: "Image generation is not configured." });
     return;
   }
+  const { prompt, negative_prompt, seed, width, height, steps } = parsed.data;
 
+  const body: Record<string, unknown> = {
+    prompt,
+    model: DEZGO_MODEL,
+    width: clampDim(width),
+    height: clampDim(height),
+    steps: clampSteps(steps),
+    format: "png",
+  };
+  if (negative_prompt) body.negative_prompt = negative_prompt;
+  if (typeof seed === "number") body.seed = Math.abs(Math.floor(seed)) % 2_147_483_647;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 180_000);
   try {
-    const result = await forward(
-      joinUrl(baseUrl, "/images/generations"),
-      apiKey,
-      rest,
-      180_000,
-    );
-    res.status(result.status).json(result.body);
+    const upstream = await fetch(DEZGO_FLUX_URL, {
+      method: "POST",
+      headers: { "X-Dezgo-Key": key, "content-type": "application/json" },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+    if (!upstream.ok) {
+      req.log.error({ status: upstream.status }, "Dezgo image generation failed");
+      res.status(502).json({ error: "Could not generate the image. Try again." });
+      return;
+    }
+    const arrayBuf = await upstream.arrayBuffer();
+    res.setHeader("Content-Type", "image/png");
+    res.send(Buffer.from(arrayBuf));
   } catch (err) {
-    req.log.error({ err }, "AI image proxy failed");
-    res.status(502).json({ error: "Could not reach the AI provider." });
+    req.log.error({ err }, "AI image request failed");
+    res.status(502).json({ error: "Could not reach the image provider." });
+  } finally {
+    clearTimeout(timer);
   }
 });
 
 // ---- ElevenLabs character speech (server-key) ----
-// Unlike the bring-your-own-key script/image routes, speech uses the app's own
-// ElevenLabs key from the environment, so the host is fixed (no SSRF surface).
+// Uses the app's own ElevenLabs key from the environment; the host is fixed.
 const ELEVEN_BASE = "https://api.elevenlabs.io";
 
 function elevenKey(): string | undefined {

@@ -24,19 +24,18 @@ A browser-based studio for assembling graphic novels from your own uploaded imag
 
 - `artifacts/graphic-novel/` — the React + Vite studio (web app, served at `/`).
   - `src/lib/db.ts` — IndexedDB schema (projects / panels / audio_tracks), source of truth for the data model.
-  - `src/lib/ai-client.ts` — Text→Novel conversion logic (script + image generation, style consistency).
+  - `src/lib/ai-client.ts` — Text→Novel conversion logic (script + image generation, style consistency). Talks only to our own `/api/ai/*`; no provider/keys client-side.
   - `src/lib/style-presets.ts` — drawing-style presets (incl. token-light `stick`).
-  - `src/lib/ai-settings.ts` — per-user AI provider config (baseUrl/key/model) in localStorage.
   - `src/lib/export.ts` — PDF + video export, including audio mixing.
   - `src/components/ConvertDialog.tsx` — the Text→Novel form (incl. PDF/.docx/TXT upload into source text).
   - `src/lib/text-extract.ts` — client-side document text extraction (pdfjs-dist + mammoth, lazy-loaded).
   - `src/components/SpeakControl.tsx` — per-panel ElevenLabs character voice picker.
   - `src/lib/tts-client.ts` — calls the speech endpoints.
-- `artifacts/api-server/src/routes/ai.ts` — auth-gated AI routes: bring-your-own-key proxy (`/api/ai/script`, `/api/ai/image`) and app-key ElevenLabs speech (`/api/ai/voices`, `/api/ai/tts`).
+- `artifacts/api-server/src/routes/ai.ts` — auth-gated AI routes, all using backend env keys: `/api/ai/script` (Anthropic + Venice fallback), `/api/ai/image` (Dezgo Flux, returns PNG bytes), `/api/ai/voices` + `/api/ai/tts` (ElevenLabs), and `/api/ai/config` (reports readiness only).
 
 ## Architecture decisions
 
-- **Bring-your-own-key AI.** Users supply their own OpenAI-compatible provider (Venice/OpenAI). The key never persists server-side; the server only proxies a single request (auth-gated, SSRF-guarded) so the browser doesn't leak the key cross-origin or hit CORS.
+- **Backend-only AI keys.** Users never see, enter, or supply any key — there is no provider UI. All keys are env secrets used server-side: script via Anthropic (`claude-sonnet-4-6`, Venice `llama-3.3-70b` fallback), images via Dezgo Flux (`flux_1_schnell`), speech via ElevenLabs. The browser only calls our auth-gated `/api/ai/*`; hosts are fixed (no SSRF surface).
 - **Style consistency is enforced, not requested.** A fixed style prefix + a single shared seed are applied to every panel's image call, and the LLM is forbidden from emitting style words. See `.agents/memory/graphic-novel.md`.
 - **Everything client-side.** All novel data lives in the browser's IndexedDB; there is no server database for user content.
 - **Per-panel audio layers over sequence audio** in both live preview and video export.
