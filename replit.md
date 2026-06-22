@@ -1,6 +1,6 @@
-# [Project name]
+# Graphic Novel Creator
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+A browser-based studio for assembling graphic novels from your own uploaded images, captions, and audio — arrange panels, score them with audio tracks, and play the result as a slideshow.
 
 ## Run & Operate
 

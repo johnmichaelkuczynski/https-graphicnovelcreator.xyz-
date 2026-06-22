@@ -1,0 +1,194 @@
+import React, { useState, useRef } from 'react';
+import { Panel } from '@/lib/db';
+import { useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import { BlobImage } from './BlobMedia';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Trash2, GripVertical, Image as ImageIcon, Plus, Clock } from 'lucide-react';
+import { useSavePanel, useDeletePanel } from '@/hooks/use-novel';
+import { Textarea } from '@/components/ui/textarea';
+
+export function PanelItem({ 
+  panel, 
+  index, 
+  onInsertBefore, 
+  onInsertAfter 
+}: { 
+  panel: Panel; 
+  index: number;
+  onInsertBefore: () => void;
+  onInsertAfter: () => void;
+}) {
+  const savePanel = useSavePanel();
+  const deletePanel = useDeletePanel();
+  
+  const [isEditingCaption, setIsEditingCaption] = useState(false);
+  const [caption, setCaption] = useState(panel.caption);
+  const [duration, setDuration] = useState(panel.durationSeconds.toString());
+  
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging
+  } = useSortable({ id: panel.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    zIndex: isDragging ? 10 : 1,
+  };
+
+  const handleSaveCaption = () => {
+    savePanel.mutate({ ...panel, caption });
+    setIsEditingCaption(false);
+  };
+
+  const handleDurationChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setDuration(val);
+    const num = parseFloat(val);
+    if (!isNaN(num) && num > 0) {
+      savePanel.mutate({ ...panel, durationSeconds: num });
+    }
+  };
+
+  const handleReplaceImage = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      savePanel.mutate({ ...panel, imageBlob: e.target.files[0] });
+    }
+  };
+
+  return (
+    <div 
+      ref={setNodeRef} 
+      style={style}
+      className={`relative group bg-card border-4 border-border flex flex-col brutal-shadow ${isDragging ? 'opacity-50' : 'hover:-translate-y-1 hover:shadow-[8px_8px_0_0_hsl(var(--foreground))]'} transition-all duration-200`}
+    >
+      {/* Insert Before Button - visible on hover */}
+      <div className="absolute -left-5 top-1/2 -translate-y-1/2 z-20 opacity-0 group-hover:opacity-100 transition-opacity">
+        <Button 
+          size="icon" 
+          variant="outline" 
+          className="w-8 h-8 rounded-full bg-background border-2 border-border brutal-shadow"
+          onClick={onInsertBefore}
+        >
+          <Plus className="w-4 h-4" />
+        </Button>
+      </div>
+      
+      {/* Insert After Button - visible on hover */}
+      <div className="absolute -right-5 top-1/2 -translate-y-1/2 z-20 opacity-0 group-hover:opacity-100 transition-opacity">
+        <Button 
+          size="icon" 
+          variant="outline" 
+          className="w-8 h-8 rounded-full bg-background border-2 border-border brutal-shadow"
+          onClick={onInsertAfter}
+        >
+          <Plus className="w-4 h-4" />
+        </Button>
+      </div>
+
+      {/* Header bar */}
+      <div className="flex items-center justify-between p-2 border-b-4 border-border bg-muted/50">
+        <div className="flex items-center gap-2">
+          <div 
+            {...attributes} 
+            {...listeners}
+            className="cursor-grab active:cursor-grabbing p-1 hover:bg-border/10 rounded"
+          >
+            <GripVertical className="w-5 h-5 text-muted-foreground" />
+          </div>
+          <span className="font-bold font-mono bg-background border-2 border-border px-2 py-0.5 brutal-shadow-sm text-sm">
+            #{index + 1}
+          </span>
+        </div>
+        
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 bg-background border-2 border-border px-2 py-1 brutal-shadow-sm">
+            <Clock className="w-3 h-3 text-muted-foreground" />
+            <input 
+              type="number" 
+              value={duration} 
+              onChange={handleDurationChange}
+              className="w-10 text-xs font-mono bg-transparent outline-none text-right"
+              step="0.5"
+              min="0.5"
+            />
+            <span className="text-xs font-mono text-muted-foreground">s</span>
+          </div>
+          <Button 
+            size="icon" 
+            variant="ghost" 
+            className="h-8 w-8 hover:bg-destructive/10 hover:text-destructive text-muted-foreground"
+            onClick={() => deletePanel.mutate(panel.id)}
+          >
+            <Trash2 className="w-4 h-4" />
+          </Button>
+        </div>
+      </div>
+
+      {/* Caption area */}
+      <div className="p-3 border-b-4 border-border bg-accent/5">
+        {isEditingCaption ? (
+          <div className="flex flex-col gap-2">
+            <Textarea 
+              value={caption} 
+              onChange={e => setCaption(e.target.value)}
+              className="font-serif resize-none border-2 border-border brutal-shadow-sm focus-visible:ring-0 focus-visible:ring-offset-0"
+              rows={3}
+              placeholder="Enter panel caption..."
+              autoFocus
+              onBlur={handleSaveCaption}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSaveCaption();
+                }
+              }}
+            />
+            <p className="text-[10px] text-muted-foreground text-right uppercase font-bold tracking-wider">Press Enter to save</p>
+          </div>
+        ) : (
+          <div 
+            onClick={() => setIsEditingCaption(true)}
+            className={`font-serif min-h-[3rem] p-2 border-2 border-transparent hover:border-border hover:bg-background cursor-text transition-colors ${!caption ? 'text-muted-foreground italic' : ''}`}
+          >
+            {caption || "Click to add caption..."}
+          </div>
+        )}
+      </div>
+
+      {/* Image area */}
+      <div className="relative aspect-[4/3] bg-muted flex items-center justify-center overflow-hidden group/img">
+        <BlobImage 
+          blob={panel.imageBlob} 
+          className="w-full h-full object-cover" 
+        />
+        
+        {/* Replace Image Overlay */}
+        <div className="absolute inset-0 bg-background/80 backdrop-blur-sm opacity-0 group-hover/img:opacity-100 flex items-center justify-center transition-opacity">
+          <input 
+            type="file" 
+            accept="image/*" 
+            className="hidden" 
+            ref={fileInputRef}
+            onChange={handleReplaceImage}
+          />
+          <Button 
+            variant="outline" 
+            className="border-2 border-border bg-background brutal-shadow brutal-shadow-hover font-bold"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <ImageIcon className="w-4 h-4 mr-2" /> Replace Artwork
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
