@@ -9,7 +9,8 @@ import { Label } from '@/components/ui/label';
 import {
   Accordion, AccordionItem, AccordionTrigger, AccordionContent,
 } from '@/components/ui/accordion';
-import { Wand2, Loader2, Settings, Music, KeyRound, AlertTriangle } from 'lucide-react';
+import { Wand2, Loader2, Settings, Music, KeyRound, AlertTriangle, Upload } from 'lucide-react';
+import { extractTextFromFile, ACCEPTED_TEXT_TYPES } from '@/lib/text-extract';
 import { STYLE_PRESETS, getStylePreset } from '@/lib/style-presets';
 import {
   AiSettings, loadAiSettings, saveAiSettings, PROVIDER_PRESETS,
@@ -44,7 +45,34 @@ export function ConvertDialog({
   const [progress, setProgress] = useState<ConvertProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const [extracting, setExtracting] = useState(false);
+  const [uploadedName, setUploadedName] = useState<string | null>(null);
+
   const audioRef = useRef<HTMLInputElement>(null);
+  const docRef = useRef<HTMLInputElement>(null);
+
+  const handleDocUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (docRef.current) docRef.current.value = '';
+    if (!file) return;
+    setExtracting(true);
+    setError(null);
+    try {
+      const text = await extractTextFromFile(file);
+      if (!text) {
+        setError(`No readable text found in "${file.name}".`);
+        return;
+      }
+      // Append to whatever is already there so an upload never silently wipes
+      // text the user already typed/pasted.
+      setSourceText((prev) => (prev.trim() ? `${prev.trim()}\n\n${text}` : text));
+      setUploadedName(file.name);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not read that file.');
+    } finally {
+      setExtracting(false);
+    }
+  };
 
   const updateSettings = (patch: Partial<AiSettings>) => {
     setSettings((prev) => {
@@ -127,6 +155,7 @@ export function ConvertDialog({
       setSourceText('');
       setOutputSpec('');
       setAudioFile(null);
+      setUploadedName(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong. Try again.');
     } finally {
@@ -151,15 +180,43 @@ export function ConvertDialog({
         <div className="flex flex-col gap-5 py-2">
           {/* Source text */}
           <div className="flex flex-col gap-2">
-            <Label className="font-black uppercase text-xs">Source text</Label>
+            <div className="flex items-center justify-between gap-2">
+              <Label className="font-black uppercase text-xs">Source text</Label>
+              <input
+                ref={docRef}
+                type="file"
+                accept={ACCEPTED_TEXT_TYPES}
+                className="hidden"
+                onChange={handleDocUpload}
+              />
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="border-2 border-border font-bold text-xs"
+                onClick={() => docRef.current?.click()}
+                disabled={busy || extracting}
+              >
+                {extracting ? (
+                  <><Loader2 className="w-3 h-3 mr-1 animate-spin" /> Reading…</>
+                ) : (
+                  <><Upload className="w-3 h-3 mr-1" /> Upload PDF / Word / TXT</>
+                )}
+              </Button>
+            </div>
             <Textarea
               value={sourceText}
               onChange={(e) => setSourceText(e.target.value)}
               rows={5}
-              placeholder="Paste an essay, article, proof, notes — anything."
+              placeholder="Paste an essay, article, proof, notes — anything. Or upload a PDF, Word doc, or TXT file."
               className="border-2 border-border resize-y"
               disabled={busy}
             />
+            {uploadedName && (
+              <p className="text-xs text-muted-foreground">
+                Loaded text from <span className="font-bold">{uploadedName}</span> — edit above if needed.
+              </p>
+            )}
           </div>
 
           {/* Output spec */}
