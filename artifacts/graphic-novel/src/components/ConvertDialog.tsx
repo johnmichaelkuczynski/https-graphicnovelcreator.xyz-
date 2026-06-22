@@ -200,7 +200,7 @@ export function ConvertDialog({
                 {extracting ? (
                   <><Loader2 className="w-3 h-3 mr-1 animate-spin" /> Reading…</>
                 ) : (
-                  <><Upload className="w-3 h-3 mr-1" /> Upload PDF / Word / TXT</>
+                  <><Upload className="w-3 h-3 mr-1" /> Upload PDF / Word (.docx) / TXT</>
                 )}
               </Button>
             </div>

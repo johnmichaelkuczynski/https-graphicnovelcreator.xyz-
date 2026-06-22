@@ -1,11 +1,7 @@
-import * as pdfjs from 'pdfjs-dist';
-import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
-import mammoth from 'mammoth';
-
-pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
-
+// File picker filter. Note: legacy binary .doc is intentionally excluded — it
+// cannot be parsed in the browser. Users get a clear error if they force one.
 export const ACCEPTED_TEXT_TYPES =
-  '.txt,.md,.pdf,.doc,.docx,text/plain,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  '.txt,.md,.pdf,.docx,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
 function getExt(name: string): string {
   const i = name.lastIndexOf('.');
@@ -13,6 +9,11 @@ function getExt(name: string): string {
 }
 
 async function extractPdf(file: File): Promise<string> {
+  // Lazy-loaded so the ~2MB pdf engine + worker only ship when actually used.
+  const pdfjs = await import('pdfjs-dist');
+  const workerUrl = (await import('pdfjs-dist/build/pdf.worker.min.mjs?url')).default;
+  pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
+
   const buf = await file.arrayBuffer();
   const doc = await pdfjs.getDocument({ data: buf }).promise;
   const parts: string[] = [];
@@ -28,6 +29,7 @@ async function extractPdf(file: File): Promise<string> {
 }
 
 async function extractDocx(file: File): Promise<string> {
+  const mammoth = (await import('mammoth')).default;
   const buf = await file.arrayBuffer();
   const result = await mammoth.extractRawText({ arrayBuffer: buf });
   return result.value;
