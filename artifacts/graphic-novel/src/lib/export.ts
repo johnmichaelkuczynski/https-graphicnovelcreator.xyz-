@@ -1,4 +1,5 @@
 import { jsPDF } from 'jspdf';
+import fixWebmDuration from 'fix-webm-duration';
 import { Panel, AudioTrack } from './db';
 
 export function downloadBlob(blob: Blob, filename: string) {
@@ -253,18 +254,61 @@ export async function exportVideo(
 
   const totalMs = panels.reduce((sum, p) => sum + Math.max(0.5, p.durationSeconds) * 1000, 0);
 
+  // Cumulative panel-boundary times in ms, used to map elapsed time -> panel.
+  const boundariesMs: number[] = [];
+  {
+    let acc = 0;
+    for (const p of panels) {
+      acc += Math.max(0.5, p.durationSeconds) * 1000;
+      boundariesMs.push(acc);
+    }
+  }
+
   return new Promise<void>((resolve) => {
-    recorder.onstop = () => {
+    let drawTimer: ReturnType<typeof setInterval> | null = null;
+    let stopTimer: ReturnType<typeof setTimeout> | null = null;
+    let stopped = false;
+    let startTime = 0;
+
+    const cleanupTimers = () => {
+      if (drawTimer !== null) clearInterval(drawTimer);
+      if (stopTimer !== null) clearTimeout(stopTimer);
+      drawTimer = null;
+      stopTimer = null;
+    };
+
+    const stopRecording = () => {
+      if (stopped) return;
+      stopped = true;
+      cleanupTimers();
+      // Draw the final panel one last time so the tail isn't a stale frame.
+      drawPanelFrame(ctx, W, H, images[images.length - 1], panels[panels.length - 1].caption);
+      if (recorder.state !== 'inactive') recorder.stop();
+    };
+
+    recorder.onstop = async () => {
+      cleanupTimers();
       const type = mime || 'video/webm';
       const ext = type.includes('mp4') ? 'mp4' : 'webm';
-      const blob = new Blob(chunks, { type });
+      const actualMs = startTime ? performance.now() - startTime : totalMs;
+      let blob = new Blob(chunks, { type });
+      // Chrome's MediaRecorder writes WebM without a valid duration header, so
+      // players only play a fraction of the file. Patch the duration in.
+      if (ext === 'webm') {
+        try {
+          blob = await fixWebmDuration(blob, Math.round(actualMs), { logger: false });
+        } catch {
+          // fall back to the unpatched blob
+        }
+      }
       downloadBlob(blob, `${safeName(projectName) || 'graphic-novel'}.${ext}`);
       if (audioCtx) audioCtx.close().catch(() => {});
       onProgress?.(1);
       resolve();
     };
 
-    recorder.start();
+    // Flush a chunk every second so a long recording isn't held as one blob.
+    recorder.start(1000);
 
     // Now that recording has begun, schedule the decoded audio.
     if (audioCtx && audioDest) {
@@ -287,31 +331,36 @@ export async function exportVideo(
       }
     }
 
-    const startTime = performance.now();
+    startTime = performance.now();
 
-    const tick = () => {
+    // Draw via setInterval (not requestAnimationFrame): rAF is fully paused when
+    // the tab/preview loses focus, which would freeze the video partway through.
+    // Timers keep firing in the background (throttled to ~1s, which is fine since
+    // panels last whole seconds), so every panel makes it into the recording.
+    const draw = () => {
       const elapsed = performance.now() - startTime;
       onProgress?.(Math.min(0.99, elapsed / totalMs));
 
-      let acc = 0;
       let idx = panels.length - 1;
-      for (let i = 0; i < panels.length; i++) {
-        acc += Math.max(0.5, panels[i].durationSeconds) * 1000;
-        if (elapsed < acc) {
+      for (let i = 0; i < boundariesMs.length; i++) {
+        if (elapsed < boundariesMs[i]) {
           idx = i;
           break;
         }
       }
 
+      // Always redraw so the canvas stream stays current even if a panel was
+      // briefly skipped while the tab was throttled in the background.
       drawPanelFrame(ctx, W, H, images[idx], panels[idx].caption);
 
-      if (elapsed >= totalMs) {
-        recorder.stop();
-        return;
-      }
-      requestAnimationFrame(tick);
+      if (elapsed >= totalMs) stopRecording();
     };
 
-    requestAnimationFrame(tick);
+    // Draw the first frame immediately, then keep the canvas in sync.
+    draw();
+    drawTimer = setInterval(draw, 200);
+    // Independent wall-clock stop so the recording always ends even if the draw
+    // loop is throttled in the background.
+    stopTimer = setTimeout(stopRecording, totalMs + 400);
   });
 }
