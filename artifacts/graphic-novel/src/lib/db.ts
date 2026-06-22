@@ -15,9 +15,13 @@ export interface Panel {
   durationSeconds: number;
   order: number;
   // Optional audio attached to this single panel (sound effect / narration /
-  // music). Plays during this panel, layered over any sequence-wide tracks.
+  // music / generated character speech). Plays during this panel, layered over
+  // any sequence-wide tracks.
   audioBlob?: Blob;
   audioName?: string;
+  // Last ElevenLabs voice used to voice this panel's character, so the choice
+  // persists between speech regenerations.
+  voiceId?: string;
 }
 
 export interface AudioTrack {
@@ -49,7 +53,7 @@ let dbPromise: Promise<IDBPDatabase<NovelDBSchema>>;
 
 export async function getDB() {
   if (!dbPromise) {
-    dbPromise = openDB<NovelDBSchema>('novel-creator-db', 3, {
+    dbPromise = openDB<NovelDBSchema>('novel-creator-db', 4, {
       async upgrade(db, oldVersion, _newVersion, tx) {
         if (!db.objectStoreNames.contains('panels')) {
           const panelStore = db.createObjectStore('panels', { keyPath: 'id' });

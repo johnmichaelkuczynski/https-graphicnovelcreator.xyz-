@@ -9,6 +9,7 @@ import { Trash2, GripVertical, Image as ImageIcon, Plus, Clock, Download, Music,
 import { useSavePanel, useDeletePanel } from '@/hooks/use-novel';
 import { Textarea } from '@/components/ui/textarea';
 import { downloadPanelImage } from '@/lib/export';
+import { SpeakControl } from './SpeakControl';
 
 export function PanelItem({ 
   panel, 
@@ -174,6 +175,7 @@ export function PanelItem({
               <Music className="w-4 h-4" />
             </Button>
           )}
+          <SpeakControl panel={panel} />
           <Button 
             size="icon" 
             variant="ghost" 

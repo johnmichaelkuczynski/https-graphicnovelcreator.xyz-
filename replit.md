@@ -29,7 +29,9 @@ A browser-based studio for assembling graphic novels from your own uploaded imag
   - `src/lib/ai-settings.ts` — per-user AI provider config (baseUrl/key/model) in localStorage.
   - `src/lib/export.ts` — PDF + video export, including audio mixing.
   - `src/components/ConvertDialog.tsx` — the Text→Novel form.
-- `artifacts/api-server/src/routes/ai.ts` — auth-gated proxy to the user's AI provider (`/api/ai/script`, `/api/ai/image`).
+  - `src/components/SpeakControl.tsx` — per-panel ElevenLabs character voice picker.
+  - `src/lib/tts-client.ts` — calls the speech endpoints.
+- `artifacts/api-server/src/routes/ai.ts` — auth-gated AI routes: bring-your-own-key proxy (`/api/ai/script`, `/api/ai/image`) and app-key ElevenLabs speech (`/api/ai/voices`, `/api/ai/tts`).
 
 ## Architecture decisions
 

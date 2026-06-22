@@ -21,6 +21,11 @@ Function 2 (Text→Graphic Novel) lets users bring their own OpenAI-compatible k
 # Per-panel audio layering
 Each `Panel` may carry its own `audioBlob`/`audioName`, layered OVER (not replacing) the sequence-wide audio tracks. Three places must stay in sync: `PanelItem` (attach/replace/remove UI), `PreviewPlayer` (separate `panelAudioRef`, restarted on panel change), and `export.ts` (decode panel buffers, schedule each at its cumulative panel start offset alongside sequence tracks).
 
+# ElevenLabs character speech
+Per-panel "make the character speak": user picks an ElevenLabs voice + the words, generates TTS, and the mp3 becomes that panel's `audioBlob` (reusing per-panel audio playback/export — no new playback path needed). Chosen `voiceId` persists on the panel.
+**Key difference from the script/image proxy:** speech uses the APP's OWN ElevenLabs key from env (`ELEVEN_API_KEY` || `ELEVEN_LABS_API_KEY`), NOT bring-your-own. Host is fixed (`api.elevenlabs.io`), so no SSRF guard needed; routes are still Clerk-gated and 503 if the key is absent. ElevenLabs auth uses the `xi-api-key` header (not Bearer). Never log the upstream TTS error body — it can echo the user's text.
+**Gotcha:** a popover's local edit state (e.g. the speech text defaulting to the caption) must re-sync from the panel on open via an effect, or it goes stale after the caption changes.
+
 # AI proxy SSRF guard (api-server/routes/ai.ts)
 The proxy forwards to a user-supplied `baseUrl`, so it is an SSRF vector even behind Clerk auth.
 **Rule:** the guard is async and must RESOLVE DNS (`dns/promises` lookup, all addresses) and reject if ANY resolved IP is private/loopback/link-local/ULA/CGNAT/multicast — a hostname string check alone is defeated by public-looking domains pointing at internal IPs. Both `/ai/script` and `/ai/image` must `await isAllowedBaseUrl`.

@@ -201,4 +201,114 @@ router.post("/ai/image", async (req, res) => {
   }
 });
 
+// ---- ElevenLabs character speech (server-key) ----
+// Unlike the bring-your-own-key script/image routes, speech uses the app's own
+// ElevenLabs key from the environment, so the host is fixed (no SSRF surface).
+const ELEVEN_BASE = "https://api.elevenlabs.io";
+
+function elevenKey(): string | undefined {
+  return process.env.ELEVEN_API_KEY || process.env.ELEVEN_LABS_API_KEY;
+}
+
+const ttsSchema = z.object({
+  text: z.string().min(1).max(5000),
+  voiceId: z.string().min(1),
+  modelId: z.string().optional(),
+});
+
+router.get("/ai/voices", async (req, res) => {
+  const { userId } = getAuth(req);
+  if (!userId) {
+    res.status(401).json({ error: "Sign in to use character voices." });
+    return;
+  }
+  const key = elevenKey();
+  if (!key) {
+    res.status(503).json({ error: "Character voices are not configured." });
+    return;
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30_000);
+  try {
+    const upstream = await fetch(`${ELEVEN_BASE}/v1/voices`, {
+      headers: { "xi-api-key": key },
+      signal: controller.signal,
+    });
+    if (!upstream.ok) {
+      res.status(502).json({ error: "Could not load voices." });
+      return;
+    }
+    const data = (await upstream.json()) as {
+      voices?: { voice_id: string; name: string; category?: string }[];
+    };
+    const voices = (data.voices ?? []).map((v) => ({
+      voiceId: v.voice_id,
+      name: v.name,
+      category: v.category,
+    }));
+    res.json({ voices });
+  } catch (err) {
+    req.log.error({ err }, "ElevenLabs voices fetch failed");
+    res.status(502).json({ error: "Could not load voices." });
+  } finally {
+    clearTimeout(timer);
+  }
+});
+
+router.post("/ai/tts", async (req, res) => {
+  const { userId } = getAuth(req);
+  if (!userId) {
+    res.status(401).json({ error: "Sign in to use character voices." });
+    return;
+  }
+  const key = elevenKey();
+  if (!key) {
+    res.status(503).json({ error: "Character voices are not configured." });
+    return;
+  }
+
+  const parsed = ttsSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid request", details: parsed.error.issues });
+    return;
+  }
+  const { text, voiceId, modelId } = parsed.data;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 60_000);
+  try {
+    const upstream = await fetch(
+      `${ELEVEN_BASE}/v1/text-to-speech/${encodeURIComponent(voiceId)}`,
+      {
+        method: "POST",
+        headers: {
+          "xi-api-key": key,
+          "Content-Type": "application/json",
+          Accept: "audio/mpeg",
+        },
+        body: JSON.stringify({
+          text,
+          model_id: modelId || "eleven_multilingual_v2",
+        }),
+        signal: controller.signal,
+      },
+    );
+    if (!upstream.ok) {
+      // Log only the status, not the body (it can echo the user's text).
+      req.log.error({ status: upstream.status }, "ElevenLabs TTS failed");
+      res.status(502).json({ error: "Speech generation failed." });
+      return;
+    }
+    const arrayBuf = await upstream.arrayBuffer();
+    res.setHeader("Content-Type", "audio/mpeg");
+    res.send(Buffer.from(arrayBuf));
+  } catch (err) {
+    req.log.error({ err }, "ElevenLabs TTS request failed");
+    res.status(502).json({ error: "Speech generation failed." });
+  } finally {
+    clearTimeout(timer);
+  }
+});
+
 export default router;
