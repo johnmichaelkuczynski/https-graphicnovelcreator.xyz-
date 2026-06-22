@@ -1,19 +1,24 @@
 import React, { useRef, useState } from 'react';
 import { usePanels, useAudioTracks, useSavePanel, useSaveAudioTrack } from '@/hooks/use-novel';
-import { useCreateProject, useDeleteProject, useClearProject } from '@/hooks/use-projects';
+import { useCreateProject, useClearProject } from '@/hooks/use-projects';
 import { useProjectContext } from '@/lib/project-context';
 import { PanelGrid } from '@/components/PanelGrid';
 import { AudioManager } from '@/components/AudioManager';
 import { PreviewPlayer } from '@/components/PreviewPlayer';
 import { ConvertDialog } from '@/components/ConvertDialog';
+import { ProjectsDialog } from '@/components/ProjectsDialog';
 import { Button } from '@/components/ui/button';
 import {
   Play, Plus, Upload, Music, Image as ImageIcon, FileText, Film,
-  FolderPlus, Trash2, ChevronDown, Loader2, LogOut, Wand2,
+  FolderPlus, Trash2, ChevronDown, Loader2, LogOut, Wand2, Pencil,
 } from 'lucide-react';
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuLabel,
 } from '@/components/ui/dropdown-menu';
+import {
+  AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogFooter,
+  AlertDialogTitle, AlertDialogDescription, AlertDialogAction, AlertDialogCancel,
+} from '@/components/ui/alert-dialog';
 import { exportPdf, exportVideo } from '@/lib/export';
 import { useQueryClient } from '@tanstack/react-query';
 import { useUser, useClerk } from '@clerk/react';
@@ -32,13 +37,14 @@ export default function Studio() {
   const savePanel = useSavePanel();
   const saveTrack = useSaveAudioTrack();
   const createProject = useCreateProject();
-  const deleteProject = useDeleteProject();
   const clearProject = useClearProject();
 
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [exportStatus, setExportStatus] = useState<string | null>(null);
   const [showConvert, setShowConvert] = useState(false);
+  const [showProjects, setShowProjects] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
@@ -86,34 +92,14 @@ export default function Studio() {
   };
 
   const handleNewProject = async () => {
-    const name = window.prompt('Name your new project:', `Project ${projects.length + 1}`);
-    if (name === null) return;
-    const project = await createProject.mutateAsync(name || `Project ${projects.length + 1}`);
+    const project = await createProject.mutateAsync(`Project ${projects.length + 1}`);
     setCurrentProjectId(project.id);
   };
 
-  const handleDeleteProject = async () => {
-    if (!currentProjectId || !currentProject) return;
-    await handleDeleteProjectById(currentProjectId, currentProject.name);
-  };
-
-  const handleDeleteProjectById = async (id: string, name: string) => {
-    const ok = window.confirm(`Delete project "${name}" and everything in it? This cannot be undone.`);
-    if (!ok) return;
-    const remaining = projects.filter((p) => p.id !== id);
-    await deleteProject.mutateAsync(id);
-    // Move off the deleted project if it was selected; if none remain the
-    // provider auto-creates a fresh one.
-    if (id === currentProjectId && remaining.length > 0) {
-      setCurrentProjectId(remaining[0].id);
-    }
-  };
-
-  const handleClearProject = async () => {
+  const doClearProject = async () => {
     if (!currentProjectId) return;
-    const ok = window.confirm('Clear all panels and audio from this project? This cannot be undone.');
-    if (!ok) return;
     await clearProject.mutateAsync(currentProjectId);
+    setShowClearConfirm(false);
   };
 
   const handleExportPdf = async () => {
@@ -155,6 +141,31 @@ export default function Studio() {
 
       <ConvertDialog open={showConvert} onOpenChange={setShowConvert} />
 
+      <ProjectsDialog open={showProjects} onOpenChange={setShowProjects} />
+
+      <AlertDialog open={showClearConfirm} onOpenChange={setShowClearConfirm}>
+        <AlertDialogContent className="border-2 border-border">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-black uppercase tracking-tight">Clear this project?</AlertDialogTitle>
+            <AlertDialogDescription>
+              All panels and audio in "{currentProject?.name ?? 'this project'}" will be permanently removed. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="border-2 border-border font-bold">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                void doClearProject();
+              }}
+              className="border-2 border-border font-bold bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Clear
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
 
       {exportStatus && (
         <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center">
@@ -190,27 +201,17 @@ export default function Studio() {
                 <DropdownMenuItem
                   key={p.id}
                   onClick={() => setCurrentProjectId(p.id)}
-                  className={`group flex items-center justify-between gap-2 font-bold cursor-pointer ${p.id === currentProjectId ? 'bg-accent text-accent-foreground' : ''}`}
+                  className={`font-bold cursor-pointer ${p.id === currentProjectId ? 'bg-accent text-accent-foreground' : ''}`}
                 >
                   <span className="truncate">{p.name}</span>
-                  <button
-                    type="button"
-                    title="Delete project"
-                    aria-label={`Delete ${p.name}`}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      void handleDeleteProjectById(p.id, p.name);
-                    }}
-                    className="shrink-0 p-1 border-2 border-transparent text-muted-foreground hover:text-destructive-foreground hover:bg-destructive hover:border-border"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
                 </DropdownMenuItem>
               ))}
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={handleNewProject} className="font-bold cursor-pointer">
                 <FolderPlus className="w-4 h-4 mr-2" /> New Project
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setShowProjects(true)} className="font-bold cursor-pointer">
+                <Pencil className="w-4 h-4 mr-2" /> Manage / Rename / Delete
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -274,11 +275,11 @@ export default function Studio() {
                 <Film className="w-4 h-4 mr-2" /> As Video
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={handleClearProject} className="font-bold cursor-pointer text-destructive focus:text-destructive">
+              <DropdownMenuItem onClick={() => setShowClearConfirm(true)} className="font-bold cursor-pointer text-destructive focus:text-destructive">
                 <Trash2 className="w-4 h-4 mr-2" /> Clear This Project
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={handleDeleteProject} className="font-bold cursor-pointer text-destructive focus:text-destructive">
-                <Trash2 className="w-4 h-4 mr-2" /> Delete This Project
+              <DropdownMenuItem onClick={() => setShowProjects(true)} className="font-bold cursor-pointer text-destructive focus:text-destructive">
+                <Trash2 className="w-4 h-4 mr-2" /> Delete Projects…
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
