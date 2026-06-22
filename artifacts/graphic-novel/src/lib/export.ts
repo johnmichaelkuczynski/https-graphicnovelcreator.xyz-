@@ -191,12 +191,27 @@ export async function exportVideo(
   const fps = 30;
   const stream = canvas.captureStream(fps);
 
+  // Per-panel start offsets (seconds) so panel-specific audio can be scheduled
+  // at the moment its panel appears.
+  const panelStartSec: number[] = [];
+  {
+    let acc = 0;
+    for (const p of panels) {
+      panelStartSec.push(acc);
+      acc += Math.max(0.5, p.durationSeconds);
+    }
+  }
+
+  const hasPanelAudio = panels.some((p) => p.audioBlob);
+
   // Decode all audio tracks up front (do NOT start them yet — scheduling
   // must happen after the recorder starts, or early audio is lost).
   let audioCtx: AudioContext | null = null;
   let decodedBuffers: AudioBuffer[] = [];
+  // Panel audio decoded buffers keyed by panel index.
+  const decodedPanelBuffers: { startSec: number; buffer: AudioBuffer }[] = [];
   let audioDest: MediaStreamAudioDestinationNode | null = null;
-  if (tracks.length > 0) {
+  if (tracks.length > 0 || hasPanelAudio) {
     try {
       audioCtx = new AudioContext();
       audioDest = audioCtx.createMediaStreamDestination();
@@ -209,11 +224,23 @@ export async function exportVideo(
           // skip tracks that can't be decoded
         }
       }
+      for (let i = 0; i < panels.length; i++) {
+        const pa = panels[i].audioBlob;
+        if (!pa) continue;
+        try {
+          const buf = await pa.arrayBuffer();
+          const decoded = await audioCtx.decodeAudioData(buf);
+          decodedPanelBuffers.push({ startSec: panelStartSec[i], buffer: decoded });
+        } catch {
+          // skip panel audio that can't be decoded
+        }
+      }
       audioDest.stream.getAudioTracks().forEach((t) => stream.addTrack(t));
     } catch {
       audioCtx = null;
       audioDest = null;
       decodedBuffers = [];
+      decodedPanelBuffers.length = 0;
     }
   }
 
@@ -239,9 +266,10 @@ export async function exportVideo(
 
     recorder.start();
 
-    // Now that recording has begun, schedule the decoded audio sequentially.
-    if (audioCtx && audioDest && decodedBuffers.length > 0) {
+    // Now that recording has begun, schedule the decoded audio.
+    if (audioCtx && audioDest) {
       const base = audioCtx.currentTime + 0.1;
+      // Sequence-wide tracks play back-to-back from the start.
       let offset = 0;
       for (const decoded of decodedBuffers) {
         const src = audioCtx.createBufferSource();
@@ -249,6 +277,13 @@ export async function exportVideo(
         src.connect(audioDest);
         src.start(base + offset);
         offset += decoded.duration;
+      }
+      // Per-panel tracks play at the moment their panel appears, layered on top.
+      for (const { startSec, buffer } of decodedPanelBuffers) {
+        const src = audioCtx.createBufferSource();
+        src.buffer = buffer;
+        src.connect(audioDest);
+        src.start(base + startSec);
       }
     }
 

@@ -5,7 +5,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { BlobImage } from './BlobMedia';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Trash2, GripVertical, Image as ImageIcon, Plus, Clock, Download } from 'lucide-react';
+import { Trash2, GripVertical, Image as ImageIcon, Plus, Clock, Download, Music, X } from 'lucide-react';
 import { useSavePanel, useDeletePanel } from '@/hooks/use-novel';
 import { Textarea } from '@/components/ui/textarea';
 import { downloadPanelImage } from '@/lib/export';
@@ -29,6 +29,7 @@ export function PanelItem({
   const [duration, setDuration] = useState(panel.durationSeconds.toString());
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const audioInputRef = useRef<HTMLInputElement>(null);
 
   const {
     attributes,
@@ -63,6 +64,18 @@ export function PanelItem({
     if (e.target.files && e.target.files[0]) {
       savePanel.mutate({ ...panel, imageBlob: e.target.files[0] });
     }
+  };
+
+  const handlePanelAudio = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      savePanel.mutate({ ...panel, audioBlob: file, audioName: file.name });
+    }
+    if (audioInputRef.current) audioInputRef.current.value = '';
+  };
+
+  const handleRemovePanelAudio = () => {
+    savePanel.mutate({ ...panel, audioBlob: undefined, audioName: undefined });
   };
 
   return (
@@ -123,6 +136,44 @@ export function PanelItem({
             />
             <span className="text-xs font-mono text-muted-foreground">s</span>
           </div>
+          <input
+            type="file"
+            accept="audio/*"
+            className="hidden"
+            ref={audioInputRef}
+            onChange={handlePanelAudio}
+          />
+          {panel.audioBlob ? (
+            <div className="flex items-center bg-secondary/30 border-2 border-border brutal-shadow-sm">
+              <button
+                type="button"
+                className="flex items-center gap-1 px-2 py-1 max-w-[7rem]"
+                title={`Panel sound: ${panel.audioName ?? 'audio'} — click to replace`}
+                onClick={() => audioInputRef.current?.click()}
+              >
+                <Music className="w-3 h-3 shrink-0 text-foreground" />
+                <span className="text-[10px] font-mono truncate">{panel.audioName ?? 'sound'}</span>
+              </button>
+              <button
+                type="button"
+                className="px-1 py-1 hover:bg-destructive/10 hover:text-destructive border-l-2 border-border"
+                title="Remove panel sound"
+                onClick={handleRemovePanelAudio}
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          ) : (
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-8 w-8 hover:bg-accent hover:text-accent-foreground text-muted-foreground"
+              title="Add a sound just for this panel"
+              onClick={() => audioInputRef.current?.click()}
+            >
+              <Music className="w-4 h-4" />
+            </Button>
+          )}
           <Button 
             size="icon" 
             variant="ghost" 

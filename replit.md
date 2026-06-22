@@ -22,15 +22,29 @@ A browser-based studio for assembling graphic novels from your own uploaded imag
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `artifacts/graphic-novel/` — the React + Vite studio (web app, served at `/`).
+  - `src/lib/db.ts` — IndexedDB schema (projects / panels / audio_tracks), source of truth for the data model.
+  - `src/lib/ai-client.ts` — Text→Novel conversion logic (script + image generation, style consistency).
+  - `src/lib/style-presets.ts` — drawing-style presets (incl. token-light `stick`).
+  - `src/lib/ai-settings.ts` — per-user AI provider config (baseUrl/key/model) in localStorage.
+  - `src/lib/export.ts` — PDF + video export, including audio mixing.
+  - `src/components/ConvertDialog.tsx` — the Text→Novel form.
+- `artifacts/api-server/src/routes/ai.ts` — auth-gated proxy to the user's AI provider (`/api/ai/script`, `/api/ai/image`).
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- **Bring-your-own-key AI.** Users supply their own OpenAI-compatible provider (Venice/OpenAI). The key never persists server-side; the server only proxies a single request (auth-gated, SSRF-guarded) so the browser doesn't leak the key cross-origin or hit CORS.
+- **Style consistency is enforced, not requested.** A fixed style prefix + a single shared seed are applied to every panel's image call, and the LLM is forbidden from emitting style words. See `.agents/memory/graphic-novel.md`.
+- **Everything client-side.** All novel data lives in the browser's IndexedDB; there is no server database for user content.
+- **Per-panel audio layers over sequence audio** in both live preview and video export.
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+Graphic Novel Creator is a browser studio with two ways to build a novel:
+1. **Manual** — upload your own panel images, write captions, add sequence-wide audio, arrange, and play back as a slideshow; export to PDF or video.
+2. **Text → Graphic Novel (AI)** — paste source text, describe the desired output, pick a drawing style (presets including a cheap token-light stick-figure mode), set panel count and per-panel duration, optionally add audio, and CONVERT into a fully generated novel with a consistent art style across all panels.
+
+Per panel, users can attach an optional dedicated audio track that plays over the sequence soundtrack.
 
 ## User preferences
 

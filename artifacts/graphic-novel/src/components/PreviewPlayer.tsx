@@ -14,6 +14,7 @@ export function PreviewPlayer({ onClose }: { onClose: () => void }) {
   const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
   
   const audioRef = useRef<HTMLAudioElement>(null);
+  const panelAudioRef = useRef<HTMLAudioElement>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   const activePanel = panels[currentPanelIndex];
@@ -21,6 +22,7 @@ export function PreviewPlayer({ onClose }: { onClose: () => void }) {
 
   // Object URLs for audio
   const [trackUrls, setTrackUrls] = useState<string[]>([]);
+  const [panelAudioUrl, setPanelAudioUrl] = useState<string | null>(null);
 
   useEffect(() => {
     const urls = audioTracks.map(t => URL.createObjectURL(t.audioBlob));
@@ -58,6 +60,30 @@ export function PreviewPlayer({ onClose }: { onClose: () => void }) {
       }
     }
   }, [isPlaying, currentTrackIndex]);
+
+  // Per-panel audio: build an object URL for the active panel's own track.
+  useEffect(() => {
+    if (!activePanel?.audioBlob) {
+      setPanelAudioUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(activePanel.audioBlob);
+    setPanelAudioUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [activePanel?.id, activePanel?.audioBlob]);
+
+  // Play the panel's own track (layered over any sequence track) when its
+  // panel is on screen.
+  useEffect(() => {
+    const el = panelAudioRef.current;
+    if (!el) return;
+    if (isPlaying && panelAudioUrl) {
+      el.currentTime = 0;
+      el.play().catch(() => {});
+    } else {
+      el.pause();
+    }
+  }, [isPlaying, panelAudioUrl, currentPanelIndex]);
 
   const handleTrackEnded = () => {
     if (currentTrackIndex < audioTracks.length - 1) {
@@ -145,6 +171,10 @@ export function PreviewPlayer({ onClose }: { onClose: () => void }) {
           onEnded={handleTrackEnded}
           className="hidden"
         />
+      )}
+
+      {panelAudioUrl && (
+        <audio ref={panelAudioRef} src={panelAudioUrl} className="hidden" />
       )}
     </div>
   );

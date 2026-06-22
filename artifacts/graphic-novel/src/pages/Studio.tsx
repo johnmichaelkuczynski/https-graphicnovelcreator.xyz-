@@ -5,10 +5,11 @@ import { useProjectContext } from '@/lib/project-context';
 import { PanelGrid } from '@/components/PanelGrid';
 import { AudioManager } from '@/components/AudioManager';
 import { PreviewPlayer } from '@/components/PreviewPlayer';
+import { ConvertDialog } from '@/components/ConvertDialog';
 import { Button } from '@/components/ui/button';
 import {
   Play, Plus, Upload, Music, Image as ImageIcon, FileText, Film,
-  FolderPlus, Trash2, ChevronDown, Loader2, LogOut,
+  FolderPlus, Trash2, ChevronDown, Loader2, LogOut, Wand2,
 } from 'lucide-react';
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuLabel,
@@ -37,6 +38,7 @@ export default function Studio() {
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [exportStatus, setExportStatus] = useState<string | null>(null);
+  const [showConvert, setShowConvert] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
@@ -144,6 +146,9 @@ export default function Studio() {
     <div className="min-h-screen flex flex-col bg-background selection:bg-primary selection:text-primary-foreground">
       {isPreviewing && <PreviewPlayer onClose={() => setIsPreviewing(false)} />}
 
+      <ConvertDialog open={showConvert} onOpenChange={setShowConvert} />
+
+
       {exportStatus && (
         <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center">
           <div className="bg-card border-4 border-border brutal-shadow p-8 flex items-center gap-4 font-bold">
@@ -213,10 +218,18 @@ export default function Studio() {
 
           <Button
             variant="outline"
-            className="bg-primary text-primary-foreground border-2 border-border brutal-shadow brutal-shadow-hover hover:bg-primary/90 font-bold"
+            className="bg-card border-2 border-border brutal-shadow brutal-shadow-hover hover:bg-accent hover:text-accent-foreground font-bold"
             onClick={triggerAddImages}
           >
             <ImageIcon className="w-4 h-4 mr-2" /> Add Panels
+          </Button>
+
+          <Button
+            variant="outline"
+            className="bg-primary text-primary-foreground border-2 border-border brutal-shadow brutal-shadow-hover hover:bg-primary/90 font-black uppercase tracking-tight"
+            onClick={() => setShowConvert(true)}
+          >
+            <Wand2 className="w-4 h-4 mr-2" /> Convert Text
           </Button>
 
           {/* Download menu */}

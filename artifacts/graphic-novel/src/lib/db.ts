@@ -14,6 +14,10 @@ export interface Panel {
   caption: string;
   durationSeconds: number;
   order: number;
+  // Optional audio attached to this single panel (sound effect / narration /
+  // music). Plays during this panel, layered over any sequence-wide tracks.
+  audioBlob?: Blob;
+  audioName?: string;
 }
 
 export interface AudioTrack {
@@ -45,7 +49,7 @@ let dbPromise: Promise<IDBPDatabase<NovelDBSchema>>;
 
 export async function getDB() {
   if (!dbPromise) {
-    dbPromise = openDB<NovelDBSchema>('novel-creator-db', 2, {
+    dbPromise = openDB<NovelDBSchema>('novel-creator-db', 3, {
       async upgrade(db, oldVersion, _newVersion, tx) {
         if (!db.objectStoreNames.contains('panels')) {
           const panelStore = db.createObjectStore('panels', { keyPath: 'id' });
