@@ -5,9 +5,10 @@ import { CSS } from '@dnd-kit/utilities';
 import { BlobImage } from './BlobMedia';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Trash2, GripVertical, Image as ImageIcon, Plus, Clock } from 'lucide-react';
+import { Trash2, GripVertical, Image as ImageIcon, Plus, Clock, Download } from 'lucide-react';
 import { useSavePanel, useDeletePanel } from '@/hooks/use-novel';
 import { Textarea } from '@/components/ui/textarea';
+import { downloadPanelImage } from '@/lib/export';
 
 export function PanelItem({ 
   panel, 
@@ -122,6 +123,15 @@ export function PanelItem({
             />
             <span className="text-xs font-mono text-muted-foreground">s</span>
           </div>
+          <Button 
+            size="icon" 
+            variant="ghost" 
+            className="h-8 w-8 hover:bg-accent hover:text-accent-foreground text-muted-foreground"
+            title="Download this panel as an image"
+            onClick={() => downloadPanelImage(panel, index)}
+          >
+            <Download className="w-4 h-4" />
+          </Button>
           <Button 
             size="icon" 
             variant="ghost" 

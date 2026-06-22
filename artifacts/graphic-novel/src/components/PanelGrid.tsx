@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { Panel } from '@/lib/db';
 import { useUpdatePanelOrder, useSavePanel } from '@/hooks/use-novel';
+import { useProjectContext } from '@/lib/project-context';
+import { Plus } from 'lucide-react';
 import { 
   DndContext, 
   closestCenter,
@@ -18,9 +20,10 @@ import {
 } from '@dnd-kit/sortable';
 import { PanelItem } from './PanelItem';
 
-export function PanelGrid({ panels }: { panels: Panel[] }) {
+export function PanelGrid({ panels, onAddImages }: { panels: Panel[]; onAddImages: () => void }) {
   const updateOrder = useUpdatePanelOrder();
   const savePanel = useSavePanel();
+  const { currentProjectId } = useProjectContext();
   const [activeId, setActiveId] = useState<string | null>(null);
 
   const sensors = useSensors(
@@ -67,6 +70,7 @@ export function PanelGrid({ panels }: { panels: Panel[] }) {
         
         const newPanel: Panel = {
           id: crypto.randomUUID(),
+          projectId: currentProjectId!,
           imageBlob: file,
           caption: '',
           durationSeconds: 3,
@@ -107,6 +111,16 @@ export function PanelGrid({ panels }: { panels: Panel[] }) {
               onInsertAfter={() => handleInsert(index, 'after')}
             />
           ))}
+
+          <button
+            type="button"
+            onClick={onAddImages}
+            className="min-h-[16rem] flex flex-col items-center justify-center gap-3 bg-card/50 border-4 border-dashed border-border hover:border-primary hover:bg-primary/5 transition-colors text-muted-foreground hover:text-primary"
+          >
+            <Plus className="w-10 h-10" />
+            <span className="font-black uppercase tracking-wide">Add Panels</span>
+            <span className="text-xs font-mono">click or drop images</span>
+          </button>
         </div>
       </SortableContext>
     </DndContext>

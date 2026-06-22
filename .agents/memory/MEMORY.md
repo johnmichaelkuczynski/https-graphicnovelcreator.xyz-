@@ -1,0 +1,1 @@
+- [Graphic Novel data model](graphic-novel.md) — multi-project IndexedDB schema, migration rule, and browser-export gotchas.

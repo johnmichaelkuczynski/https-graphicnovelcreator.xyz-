@@ -1,7 +1,15 @@
 import { openDB, DBSchema, IDBPDatabase } from 'idb';
 
+export interface Project {
+  id: string;
+  name: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface Panel {
   id: string;
+  projectId: string;
   imageBlob: Blob;
   caption: string;
   durationSeconds: number;
@@ -10,21 +18,26 @@ export interface Panel {
 
 export interface AudioTrack {
   id: string;
+  projectId: string;
   audioBlob: Blob;
   name: string;
   order: number;
 }
 
 interface NovelDBSchema extends DBSchema {
+  projects: {
+    key: string;
+    value: Project;
+  };
   panels: {
     key: string;
     value: Panel;
-    indexes: { 'by-order': number };
+    indexes: { 'by-order': number; 'by-project': string };
   };
   audio_tracks: {
     key: string;
     value: AudioTrack;
-    indexes: { 'by-order': number };
+    indexes: { 'by-order': number; 'by-project': string };
   };
 }
 
@@ -32,8 +45,8 @@ let dbPromise: Promise<IDBPDatabase<NovelDBSchema>>;
 
 export async function getDB() {
   if (!dbPromise) {
-    dbPromise = openDB<NovelDBSchema>('novel-creator-db', 1, {
-      upgrade(db) {
+    dbPromise = openDB<NovelDBSchema>('novel-creator-db', 2, {
+      async upgrade(db, oldVersion, _newVersion, tx) {
         if (!db.objectStoreNames.contains('panels')) {
           const panelStore = db.createObjectStore('panels', { keyPath: 'id' });
           panelStore.createIndex('by-order', 'order');
@@ -42,6 +55,41 @@ export async function getDB() {
           const audioStore = db.createObjectStore('audio_tracks', { keyPath: 'id' });
           audioStore.createIndex('by-order', 'order');
         }
+
+        if (oldVersion < 2) {
+          if (!db.objectStoreNames.contains('projects')) {
+            db.createObjectStore('projects', { keyPath: 'id' });
+          }
+
+          const panelStore = tx.objectStore('panels');
+          if (!panelStore.indexNames.contains('by-project')) {
+            panelStore.createIndex('by-project', 'projectId');
+          }
+          const audioStore = tx.objectStore('audio_tracks');
+          if (!audioStore.indexNames.contains('by-project')) {
+            audioStore.createIndex('by-project', 'projectId');
+          }
+
+          // Migrate any pre-existing single-project data into a default project.
+          const existingPanels = await panelStore.getAll();
+          const existingTracks = await audioStore.getAll();
+          if (existingPanels.length > 0 || existingTracks.length > 0) {
+            const defaultId = crypto.randomUUID();
+            const now = Date.now();
+            await tx.objectStore('projects').put({
+              id: defaultId,
+              name: 'My First Project',
+              createdAt: now,
+              updatedAt: now,
+            });
+            for (const p of existingPanels) {
+              await panelStore.put({ ...p, projectId: (p as Panel).projectId ?? defaultId });
+            }
+            for (const t of existingTracks) {
+              await audioStore.put({ ...t, projectId: (t as AudioTrack).projectId ?? defaultId });
+            }
+          }
+        }
       },
     });
   }
@@ -49,12 +97,68 @@ export async function getDB() {
 }
 
 export const dbApi = {
-  async getPanels(): Promise<Panel[]> {
+  // ---- Projects ----
+  async getProjects(): Promise<Project[]> {
     const db = await getDB();
-    const panels = await db.getAllFromIndex('panels', 'by-order');
+    const projects = await db.getAll('projects');
+    return projects.sort((a, b) => a.createdAt - b.createdAt);
+  },
+
+  async createProject(name: string): Promise<Project> {
+    const db = await getDB();
+    const now = Date.now();
+    const project: Project = {
+      id: crypto.randomUUID(),
+      name: name.trim() || 'Untitled Project',
+      createdAt: now,
+      updatedAt: now,
+    };
+    await db.put('projects', project);
+    return project;
+  },
+
+  async renameProject(id: string, name: string): Promise<void> {
+    const db = await getDB();
+    const project = await db.get('projects', id);
+    if (project) {
+      project.name = name.trim() || project.name;
+      project.updatedAt = Date.now();
+      await db.put('projects', project);
+    }
+  },
+
+  async deleteProject(id: string): Promise<void> {
+    const db = await getDB();
+    const tx = db.transaction(['projects', 'panels', 'audio_tracks'], 'readwrite');
+    await tx.objectStore('projects').delete(id);
+
+    const panelKeys = await tx.objectStore('panels').index('by-project').getAllKeys(id);
+    for (const key of panelKeys) {
+      await tx.objectStore('panels').delete(key);
+    }
+    const audioKeys = await tx.objectStore('audio_tracks').index('by-project').getAllKeys(id);
+    for (const key of audioKeys) {
+      await tx.objectStore('audio_tracks').delete(key);
+    }
+    await tx.done;
+  },
+
+  async touchProject(id: string): Promise<void> {
+    const db = await getDB();
+    const project = await db.get('projects', id);
+    if (project) {
+      project.updatedAt = Date.now();
+      await db.put('projects', project);
+    }
+  },
+
+  // ---- Panels ----
+  async getPanels(projectId: string): Promise<Panel[]> {
+    const db = await getDB();
+    const panels = await db.getAllFromIndex('panels', 'by-project', projectId);
     return panels.sort((a, b) => a.order - b.order);
   },
-  
+
   async savePanel(panel: Panel): Promise<void> {
     const db = await getDB();
     await db.put('panels', panel);
@@ -78,9 +182,10 @@ export const dbApi = {
     await tx.done;
   },
 
-  async getAudioTracks(): Promise<AudioTrack[]> {
+  // ---- Audio ----
+  async getAudioTracks(projectId: string): Promise<AudioTrack[]> {
     const db = await getDB();
-    const tracks = await db.getAllFromIndex('audio_tracks', 'by-order');
+    const tracks = await db.getAllFromIndex('audio_tracks', 'by-project', projectId);
     return tracks.sort((a, b) => a.order - b.order);
   },
 
@@ -107,23 +212,13 @@ export const dbApi = {
     await tx.done;
   },
 
-  async clearAll(): Promise<void> {
+  async clearProject(projectId: string): Promise<void> {
     const db = await getDB();
     const tx = db.transaction(['panels', 'audio_tracks'], 'readwrite');
-    await tx.objectStore('panels').clear();
-    await tx.objectStore('audio_tracks').clear();
+    const panelKeys = await tx.objectStore('panels').index('by-project').getAllKeys(projectId);
+    for (const key of panelKeys) await tx.objectStore('panels').delete(key);
+    const audioKeys = await tx.objectStore('audio_tracks').index('by-project').getAllKeys(projectId);
+    for (const key of audioKeys) await tx.objectStore('audio_tracks').delete(key);
     await tx.done;
   },
-
-  async replaceAll(panels: Panel[], tracks: AudioTrack[]): Promise<void> {
-    const db = await getDB();
-    const tx = db.transaction(['panels', 'audio_tracks'], 'readwrite');
-    const panelStore = tx.objectStore('panels');
-    const audioStore = tx.objectStore('audio_tracks');
-    await panelStore.clear();
-    await audioStore.clear();
-    for (const p of panels) await panelStore.put(p);
-    for (const t of tracks) await audioStore.put(t);
-    await tx.done;
-  }
 };

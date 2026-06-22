@@ -17,9 +17,10 @@ import {
   verticalListSortingStrategy
 } from '@dnd-kit/sortable';
 import { AudioTrackItem } from './AudioTrackItem';
-import { Music } from 'lucide-react';
+import { Music, Plus } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
-export function AudioManager({ tracks }: { tracks: AudioTrack[] }) {
+export function AudioManager({ tracks, onAddAudio }: { tracks: AudioTrack[]; onAddAudio: () => void }) {
   const updateOrder = useUpdateAudioTrackOrder();
   
   const sensors = useSensors(
@@ -49,17 +50,31 @@ export function AudioManager({ tracks }: { tracks: AudioTrack[] }) {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="p-4 border-b-4 border-border bg-secondary/20 sticky top-0 z-10 backdrop-blur-sm">
+      <div className="p-4 border-b-4 border-border bg-secondary/20 sticky top-0 z-10 backdrop-blur-sm flex items-center justify-between gap-2">
         <h3 className="font-black text-lg uppercase flex items-center gap-2">
           <Music className="w-5 h-5" /> Audio Tracks
         </h3>
+        <Button
+          size="icon"
+          variant="outline"
+          className="h-8 w-8 border-2 border-border brutal-shadow brutal-shadow-hover"
+          title="Add audio tracks"
+          onClick={onAddAudio}
+        >
+          <Plus className="w-4 h-4" />
+        </Button>
       </div>
       
       <div className="flex-1 overflow-y-auto p-4">
         {tracks.length === 0 ? (
-          <div className="text-center p-6 border-2 border-dashed border-border bg-muted/30">
-            <p className="text-sm text-muted-foreground font-mono">No audio tracks added.</p>
-          </div>
+          <button
+            type="button"
+            onClick={onAddAudio}
+            className="w-full text-center p-6 border-2 border-dashed border-border bg-muted/30 hover:border-primary hover:bg-primary/5 transition-colors cursor-pointer"
+          >
+            <Plus className="w-6 h-6 mx-auto mb-2 text-muted-foreground" />
+            <p className="text-sm text-muted-foreground font-mono">Click to add audio tracks.</p>
+          </button>
         ) : (
           <DndContext 
             sensors={sensors}

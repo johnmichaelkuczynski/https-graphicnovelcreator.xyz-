@@ -12,6 +12,8 @@ export function BlobImage({ blob, className, alt = "" }: { blob: Blob; className
     };
   }, [blob]);
 
+  if (!url) return <div className={className} aria-hidden />;
+
   return <img src={url} className={className} alt={alt} />;
 }
 
