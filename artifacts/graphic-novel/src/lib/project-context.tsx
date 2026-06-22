@@ -29,6 +29,9 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     if (isLoading) return;
 
     if (projects.length === 0) {
+      // Guard against duplicate auto-creates: the effect can re-run (state
+      // changes, refetch latency) while the projects list is still empty, so we
+      // keep the flag set until a project actually shows up (reset below).
       if (creatingRef.current) return;
       creatingRef.current = true;
       (async () => {
@@ -37,12 +40,17 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
           await queryClient.invalidateQueries({ queryKey: ['projects'] });
           setCurrentProjectIdState(project.id);
           localStorage.setItem(STORAGE_KEY, project.id);
-        } finally {
+        } catch {
+          // Allow another attempt if creation failed outright.
           creatingRef.current = false;
         }
       })();
       return;
     }
+
+    // Projects exist — clear the guard so a future "deleted everything" state
+    // can auto-create a fresh project again.
+    creatingRef.current = false;
 
     const stored = localStorage.getItem(STORAGE_KEY);
     const valid = stored && projects.some((p) => p.id === stored);

@@ -94,12 +94,19 @@ export default function Studio() {
 
   const handleDeleteProject = async () => {
     if (!currentProjectId || !currentProject) return;
-    const ok = window.confirm(`Delete project "${currentProject.name}" and everything in it? This cannot be undone.`);
+    await handleDeleteProjectById(currentProjectId, currentProject.name);
+  };
+
+  const handleDeleteProjectById = async (id: string, name: string) => {
+    const ok = window.confirm(`Delete project "${name}" and everything in it? This cannot be undone.`);
     if (!ok) return;
-    const remaining = projects.filter((p) => p.id !== currentProjectId);
-    await deleteProject.mutateAsync(currentProjectId);
-    if (remaining.length > 0) setCurrentProjectId(remaining[0].id);
-    // If none remain, the provider will auto-create a fresh project.
+    const remaining = projects.filter((p) => p.id !== id);
+    await deleteProject.mutateAsync(id);
+    // Move off the deleted project if it was selected; if none remain the
+    // provider auto-creates a fresh one.
+    if (id === currentProjectId && remaining.length > 0) {
+      setCurrentProjectId(remaining[0].id);
+    }
   };
 
   const handleClearProject = async () => {
@@ -183,9 +190,22 @@ export default function Studio() {
                 <DropdownMenuItem
                   key={p.id}
                   onClick={() => setCurrentProjectId(p.id)}
-                  className={`font-bold cursor-pointer ${p.id === currentProjectId ? 'bg-accent text-accent-foreground' : ''}`}
+                  className={`group flex items-center justify-between gap-2 font-bold cursor-pointer ${p.id === currentProjectId ? 'bg-accent text-accent-foreground' : ''}`}
                 >
                   <span className="truncate">{p.name}</span>
+                  <button
+                    type="button"
+                    title="Delete project"
+                    aria-label={`Delete ${p.name}`}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      void handleDeleteProjectById(p.id, p.name);
+                    }}
+                    className="shrink-0 p-1 border-2 border-transparent text-muted-foreground hover:text-destructive-foreground hover:bg-destructive hover:border-border"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
                 </DropdownMenuItem>
               ))}
               <DropdownMenuSeparator />
