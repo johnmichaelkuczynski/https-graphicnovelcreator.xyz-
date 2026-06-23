@@ -71,3 +71,8 @@ PDF export ("Building PDF…") froze forever on real decks of large photos. `exp
 # Sonner Toaster was never mounted — error toasts silently vanished
 The app mounts the shadcn `Toaster` (`@/components/ui/toaster`, driven by `useToast`) in App.tsx, but several call sites use `toast` from `sonner`. The sonner `<Toaster>` (`@/components/ui/sonner`) must ALSO be mounted in App.tsx or every `sonner` toast (export success/failure, create-project errors) renders nothing.
 **Rule:** if you call `toast` from `sonner`, confirm `<SonnerToaster />` is mounted; the two toast systems are independent and only the one whose provider is mounted will show.
+
+# Multi-image panels (1–4 photos per panel)
+A panel can hold up to MAX_PANEL_IMAGES (4) photos; default 1. Storage keeps `imageBlob` as the always-present FIRST image and adds optional `extraImages?: Blob[]` (images 2..N) — this means NO IndexedDB version bump / migration (old single-image rows just lack `extraImages`). `getPanelImages(panel)` in db.ts is the single source of truth (primary + extras, capped at 4); every reader (grid, slideshow, PDF, video) must go through it, never read `imageBlob` directly for display/export.
+Rendering is unified by `ImageCollage` (BlobMedia.tsx): 1 = cover-fill, 2 = side-by-side, 3 = two-up + full-width bottom, 4 = 2x2. Canvas/PDF mirror this via `collageRects` + `drawImageCover` in export.ts. Single-image keeps its old "fit/contain" path in preview + PDF to avoid visual regressions.
+**Gotcha:** pass a STABLE array to ImageCollage (useMemo keyed on `panel.imageBlob`+`panel.extraImages`) or `useObjectUrls` recreates/revokes object URLs every render → flicker.

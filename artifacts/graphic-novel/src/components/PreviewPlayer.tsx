@@ -1,6 +1,7 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { usePanels, useAudioTracks } from '@/hooks/use-novel';
-import { BlobImage } from './BlobMedia';
+import { getPanelImages } from '@/lib/db';
+import { BlobImage, ImageCollage } from './BlobMedia';
 import { Button } from '@/components/ui/button';
 import { X, Play, Pause, SkipForward } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -19,6 +20,12 @@ export function PreviewPlayer({ onClose }: { onClose: () => void }) {
 
   const activePanel = panels[currentPanelIndex];
   const activeTrack = audioTracks[currentTrackIndex];
+
+  // Stable image list for the active panel so the collage doesn't churn URLs.
+  const activeImages = useMemo(
+    () => (activePanel ? getPanelImages(activePanel) : []),
+    [activePanel?.imageBlob, activePanel?.extraImages],
+  );
 
   // Object URLs for audio
   const [trackUrls, setTrackUrls] = useState<string[]>([]);
@@ -122,10 +129,17 @@ export function PreviewPlayer({ onClose }: { onClose: () => void }) {
                 </div>
               )}
               <div className="relative w-full max-h-[70vh] flex justify-center">
-                <BlobImage 
-                  blob={activePanel.imageBlob} 
-                  className="max-w-full max-h-full object-contain border-4 border-white brutal-shadow"
-                />
+                {activeImages.length <= 1 ? (
+                  <BlobImage
+                    blob={activePanel.imageBlob}
+                    className="max-w-full max-h-full object-contain border-4 border-white brutal-shadow"
+                  />
+                ) : (
+                  <ImageCollage
+                    blobs={activeImages}
+                    className="w-full max-w-3xl aspect-[4/3] max-h-[70vh] border-4 border-white brutal-shadow"
+                  />
+                )}
               </div>
             </motion.div>
           )}

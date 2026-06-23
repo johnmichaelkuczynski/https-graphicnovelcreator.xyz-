@@ -1,7 +1,7 @@
 import { jsPDF } from 'jspdf';
 import fixWebmDuration from 'fix-webm-duration';
 import { Muxer, ArrayBufferTarget } from 'webm-muxer';
-import { Panel, AudioTrack } from './db';
+import { Panel, AudioTrack, getPanelImages } from './db';
 
 export function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
@@ -79,6 +79,88 @@ function imageToJpegDataUrl(img: HTMLImageElement): { dataUrl: string; width: nu
   return { dataUrl: canvas.toDataURL('image/jpeg', 0.85), width, height };
 }
 
+// Load every image of a panel (primary + extras) in display order, skipping any
+// that can't be decoded so one bad blob never aborts the whole export.
+async function loadPanelImages(panel: Panel): Promise<HTMLImageElement[]> {
+  const out: HTMLImageElement[] = [];
+  for (const b of getPanelImages(panel)) {
+    try {
+      out.push(await blobToImage(b));
+    } catch {
+      // skip unreadable image
+    }
+  }
+  return out;
+}
+
+interface Rect { x: number; y: number; w: number; h: number }
+
+// Layout for 1–4 images inside a box. Mirrors the on-screen ImageCollage: 1 full,
+// 2 side-by-side, 3 = two on top + one spanning the bottom, 4 = even 2x2.
+function collageRects(count: number, x: number, y: number, w: number, h: number, gap: number): Rect[] {
+  if (count <= 1) return [{ x, y, w, h }];
+  const colW = (w - gap) / 2;
+  if (count === 2) {
+    return [
+      { x, y, w: colW, h },
+      { x: x + colW + gap, y, w: colW, h },
+    ];
+  }
+  const rowH = (h - gap) / 2;
+  if (count === 3) {
+    return [
+      { x, y, w: colW, h: rowH },
+      { x: x + colW + gap, y, w: colW, h: rowH },
+      { x, y: y + rowH + gap, w, h: rowH },
+    ];
+  }
+  return [
+    { x, y, w: colW, h: rowH },
+    { x: x + colW + gap, y, w: colW, h: rowH },
+    { x, y: y + rowH + gap, w: colW, h: rowH },
+    { x: x + colW + gap, y: y + rowH + gap, w: colW, h: rowH },
+  ];
+}
+
+// Draw an image to cover the rect (crop-to-fill, centered) — the canvas
+// equivalent of CSS object-fit: cover.
+function drawImageCover(ctx: CanvasRenderingContext2D, img: HTMLImageElement, x: number, y: number, w: number, h: number) {
+  const iw = img.naturalWidth || img.width;
+  const ih = img.naturalHeight || img.height;
+  if (!iw || !ih) return;
+  const imgRatio = iw / ih;
+  const rectRatio = w / h;
+  let sx: number, sy: number, sw: number, sh: number;
+  if (imgRatio > rectRatio) {
+    sh = ih;
+    sw = sh * rectRatio;
+    sx = (iw - sw) / 2;
+    sy = 0;
+  } else {
+    sw = iw;
+    sh = sw / rectRatio;
+    sx = 0;
+    sy = (ih - sh) / 2;
+  }
+  ctx.drawImage(img, sx, sy, sw, sh, x, y, w, h);
+}
+
+// Encode a cover-cropped JPEG sized to the given target (in PDF points, ~2x for
+// sharpness, capped at PDF_MAX_EDGE) for one collage tile.
+function imageToCoverJpegDataUrl(img: HTMLImageElement, targetW: number, targetH: number): string {
+  const scale = Math.min(2, PDF_MAX_EDGE / Math.max(targetW, targetH, 1));
+  const W = Math.max(1, Math.round(targetW * scale));
+  const H = Math.max(1, Math.round(targetH * scale));
+  const canvas = document.createElement('canvas');
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext('2d')!;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, W, H);
+  drawImageCover(ctx, img, 0, 0, W, H);
+  return canvas.toDataURL('image/jpeg', 0.85);
+}
+
 // Yield to the event loop so the progress UI can paint and the tab never looks
 // frozen while we crunch a large deck.
 const nextFrame = () =>
@@ -121,18 +203,29 @@ export async function exportPdf(
 
     // One unreadable image must not abort the whole export — note it and move on.
     try {
-      if (panel.imageBlob) {
-        const img = await blobToImage(panel.imageBlob);
-        const { dataUrl, width, height } = imageToJpegDataUrl(img);
-        const maxW = pageW - margin * 2;
-        const maxH = pageH - y - margin;
-        const ratio = Math.min(maxW / width, maxH / height);
+      const loaded = await loadPanelImages(panel);
+      if (loaded.length === 0) throw new Error('no images');
+
+      const areaX = margin;
+      const areaW = pageW - margin * 2;
+      const areaH = pageH - y - margin;
+
+      if (loaded.length === 1) {
+        const { dataUrl, width, height } = imageToJpegDataUrl(loaded[0]);
+        const ratio = Math.min(areaW / width, areaH / height);
         const w = width * ratio;
         const h = height * ratio;
         const x = (pageW - w) / 2;
         pdf.addImage(dataUrl, 'JPEG', x, y, w, h);
-        rendered++;
+      } else {
+        const rects = collageRects(loaded.length, areaX, y, areaW, areaH, 6);
+        for (let k = 0; k < loaded.length; k++) {
+          const r = rects[k];
+          const dataUrl = imageToCoverJpegDataUrl(loaded[k], r.w, r.h);
+          pdf.addImage(dataUrl, 'JPEG', r.x, r.y, r.w, r.h);
+        }
       }
+      rendered++;
     } catch {
       pdf.setFontSize(11);
       pdf.setTextColor(180, 60, 60);
@@ -155,7 +248,7 @@ function drawPanelFrame(
   ctx: CanvasRenderingContext2D,
   W: number,
   H: number,
-  img: HTMLImageElement,
+  imgs: HTMLImageElement[],
   caption: string,
 ) {
   ctx.fillStyle = '#111111';
@@ -166,12 +259,21 @@ function drawPanelFrame(
   const areaY = captionH;
   const areaH = H - captionH;
 
-  const ratio = Math.min(W / img.width, areaH / img.height);
-  const w = img.width * ratio;
-  const h = img.height * ratio;
-  const x = (W - w) / 2;
-  const y = areaY + (areaH - h) / 2;
-  ctx.drawImage(img, x, y, w, h);
+  if (imgs.length === 1) {
+    const img = imgs[0];
+    const ratio = Math.min(W / img.width, areaH / img.height);
+    const w = img.width * ratio;
+    const h = img.height * ratio;
+    const x = (W - w) / 2;
+    const y = areaY + (areaH - h) / 2;
+    ctx.drawImage(img, x, y, w, h);
+  } else if (imgs.length > 1) {
+    const rects = collageRects(imgs.length, 0, areaY, W, areaH, 8);
+    for (let k = 0; k < imgs.length; k++) {
+      const r = rects[k];
+      drawImageCover(ctx, imgs[k], r.x, r.y, r.w, r.h);
+    }
+  }
 
   if (captionText) {
     ctx.fillStyle = '#fdf2f8';
@@ -327,7 +429,7 @@ async function renderVideoWebCodecs(
   canvas.height = H;
   const ctx = canvas.getContext('2d')!;
 
-  const images = await Promise.all(panels.map((p) => blobToImage(p.imageBlob)));
+  const imageSets = await Promise.all(panels.map((p) => loadPanelImages(p)));
 
   const fps = 15;
   const frameDurUs = Math.round(1_000_000 / fps);
@@ -380,7 +482,7 @@ async function renderVideoWebCodecs(
 
     let tUs = 0;
     for (let i = 0; i < panels.length; i++) {
-      drawPanelFrame(ctx, W, H, images[i], panels[i].caption);
+      drawPanelFrame(ctx, W, H, imageSets[i], panels[i].caption);
       const durSec = Math.max(0.5, panels[i].durationSeconds);
       const nFrames = Math.max(1, Math.round(durSec * fps));
       for (let f = 0; f < nFrames; f++) {
@@ -479,7 +581,7 @@ async function renderVideoMediaRecorder(
   canvas.height = H;
   const ctx = canvas.getContext('2d')!;
 
-  const images = await Promise.all(panels.map((p) => blobToImage(p.imageBlob)));
+  const imageSets = await Promise.all(panels.map((p) => loadPanelImages(p)));
 
   const fps = 30;
   const stream = canvas.captureStream(fps);
@@ -565,7 +667,7 @@ async function renderVideoMediaRecorder(
       if (stopped) return;
       stopped = true;
       cleanupTimers();
-      drawPanelFrame(ctx, W, H, images[images.length - 1], panels[panels.length - 1].caption);
+      drawPanelFrame(ctx, W, H, imageSets[imageSets.length - 1], panels[panels.length - 1].caption);
       if (recorder.state !== 'inactive') recorder.stop();
     };
 
@@ -616,7 +718,7 @@ async function renderVideoMediaRecorder(
           break;
         }
       }
-      drawPanelFrame(ctx, W, H, images[idx], panels[idx].caption);
+      drawPanelFrame(ctx, W, H, imageSets[idx], panels[idx].caption);
       if (elapsed >= totalMs) stopRecording();
     };
 

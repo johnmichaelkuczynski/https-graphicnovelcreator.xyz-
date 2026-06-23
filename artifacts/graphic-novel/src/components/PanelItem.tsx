@@ -1,8 +1,8 @@
-import React, { useState, useRef } from 'react';
-import { Panel } from '@/lib/db';
+import React, { useState, useRef, useMemo } from 'react';
+import { Panel, MAX_PANEL_IMAGES, getPanelImages } from '@/lib/db';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { BlobImage } from './BlobMedia';
+import { ImageCollage } from './BlobMedia';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Trash2, GripVertical, Image as ImageIcon, Plus, Clock, Download, Music, X } from 'lucide-react';
@@ -30,7 +30,14 @@ export function PanelItem({
   const [duration, setDuration] = useState(panel.durationSeconds.toString());
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const addInputRef = useRef<HTMLInputElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
+
+  // Stable array reference so the collage doesn't rebuild object URLs each render.
+  const images = useMemo(
+    () => getPanelImages(panel),
+    [panel.imageBlob, panel.extraImages],
+  );
 
   const {
     attributes,
@@ -65,6 +72,25 @@ export function PanelItem({
     if (e.target.files && e.target.files[0]) {
       savePanel.mutate({ ...panel, imageBlob: e.target.files[0] });
     }
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleAddImages = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const picked = Array.from(e.target.files ?? []).filter((f) => f.type.startsWith('image/'));
+    if (picked.length) {
+      const room = MAX_PANEL_IMAGES - images.length;
+      const toAdd = picked.slice(0, Math.max(0, room));
+      if (toAdd.length) {
+        savePanel.mutate({ ...panel, extraImages: [...(panel.extraImages ?? []), ...toAdd] });
+      }
+    }
+    if (addInputRef.current) addInputRef.current.value = '';
+  };
+
+  const handleRemoveImage = (idx: number) => {
+    if (images.length <= 1) return;
+    const next = images.filter((_, i) => i !== idx);
+    savePanel.mutate({ ...panel, imageBlob: next[0], extraImages: next.slice(1) });
   };
 
   const handlePanelAudio = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -228,28 +254,51 @@ export function PanelItem({
       </div>
 
       {/* Image area */}
-      <div className="relative aspect-[4/3] bg-muted flex items-center justify-center overflow-hidden group/img">
-        <BlobImage 
-          blob={panel.imageBlob} 
-          className="w-full h-full object-cover" 
+      <div className="relative aspect-[4/3] bg-muted overflow-hidden group/img">
+        <ImageCollage
+          blobs={images}
+          className="w-full h-full"
+          onRemove={images.length > 1 ? handleRemoveImage : undefined}
         />
-        
-        {/* Replace Image Overlay */}
-        <div className="absolute inset-0 bg-background/80 backdrop-blur-sm opacity-0 group-hover/img:opacity-100 flex items-center justify-center transition-opacity">
-          <input 
-            type="file" 
-            accept="image/*" 
-            className="hidden" 
-            ref={fileInputRef}
-            onChange={handleReplaceImage}
-          />
-          <Button 
-            variant="outline" 
-            className="border-2 border-border bg-background brutal-shadow brutal-shadow-hover font-bold"
+
+        <input
+          type="file"
+          accept="image/*"
+          className="hidden"
+          ref={fileInputRef}
+          onChange={handleReplaceImage}
+        />
+        <input
+          type="file"
+          accept="image/*"
+          multiple
+          className="hidden"
+          ref={addInputRef}
+          onChange={handleAddImages}
+        />
+
+        {/* Controls bar — appears on hover */}
+        <div className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-2 p-2 opacity-0 group-hover/img:opacity-100 transition-opacity bg-gradient-to-t from-background/95 via-background/70 to-transparent">
+          <Button
+            size="sm"
+            variant="outline"
+            className="border-2 border-border bg-background brutal-shadow-sm font-bold"
             onClick={() => fileInputRef.current?.click()}
+            title="Replace the first photo"
           >
-            <ImageIcon className="w-4 h-4 mr-2" /> Replace Artwork
+            <ImageIcon className="w-4 h-4 mr-1" /> Replace
           </Button>
+          {images.length < MAX_PANEL_IMAGES && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-2 border-border bg-background brutal-shadow-sm font-bold"
+              onClick={() => addInputRef.current?.click()}
+              title={`Add more photos to this panel (up to ${MAX_PANEL_IMAGES})`}
+            >
+              <Plus className="w-4 h-4 mr-1" /> Add photo ({images.length}/{MAX_PANEL_IMAGES})
+            </Button>
+          )}
         </div>
       </div>
     </div>

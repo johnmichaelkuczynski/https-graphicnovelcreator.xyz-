@@ -7,10 +7,19 @@ export interface Project {
   updatedAt: number;
 }
 
+// A panel shows 1 image by default. Users may add up to MAX_PANEL_IMAGES total.
+// The first image always lives in `imageBlob` (so every reader that predates
+// multi-image still shows something and no IndexedDB migration is needed);
+// images 2..N live in the optional `extraImages` array.
+export const MAX_PANEL_IMAGES = 4;
+
 export interface Panel {
   id: string;
   projectId: string;
   imageBlob: Blob;
+  // Additional images beyond the first (up to MAX_PANEL_IMAGES - 1). Optional:
+  // a normal single-image panel simply omits it.
+  extraImages?: Blob[];
   caption: string;
   durationSeconds: number;
   order: number;
@@ -88,6 +97,16 @@ interface NovelDBSchema extends DBSchema {
     key: string;
     value: LibraryInstruction;
   };
+}
+
+// Returns every image of a panel in display order: the primary `imageBlob`
+// followed by any `extraImages`. Single source of truth for "what images does
+// this panel have" used by the grid, slideshow, PDF and video.
+export function getPanelImages(panel: Pick<Panel, 'imageBlob' | 'extraImages'>): Blob[] {
+  return ([panel.imageBlob, ...(panel.extraImages ?? [])].filter(Boolean) as Blob[]).slice(
+    0,
+    MAX_PANEL_IMAGES,
+  );
 }
 
 let dbPromise: Promise<IDBPDatabase<NovelDBSchema>>;
