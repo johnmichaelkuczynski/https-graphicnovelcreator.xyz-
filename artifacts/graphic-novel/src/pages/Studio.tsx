@@ -148,9 +148,14 @@ export default function Studio() {
 
   const handleExportPdf = async () => {
     if (panels.length === 0) return;
-    setExportStatus('Building PDF...');
+    setExportStatus('Building PDF... 0%');
     try {
-      await exportPdf(panels, currentProject?.name ?? 'graphic-novel');
+      await exportPdf(panels, currentProject?.name ?? 'graphic-novel', (f) => {
+        setExportStatus(`Building PDF... ${Math.round(f * 100)}%`);
+      });
+      toast.success('PDF downloaded.');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not build the PDF.');
     } finally {
       setExportStatus(null);
     }
@@ -163,6 +168,9 @@ export default function Studio() {
       await exportVideo(panels, audioTracks, currentProject?.name ?? 'graphic-novel', (f) => {
         setExportStatus(`Rendering video... ${Math.round(f * 100)}%`);
       });
+      toast.success('Video downloaded.');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not render the video.');
     } finally {
       setExportStatus(null);
     }

@@ -62,3 +62,12 @@ The "ensure at least one project" bootstrap in `project-context.tsx` creates "My
 
 # Project switcher dropdown ordering (Studio.tsx)
 Put the New/Manage actions ABOVE the project list, and wrap the list in a `max-h-64 overflow-y-auto` div. **Why:** with many projects the list pushed New/Rename/Delete below the fold, making them unreachable — the user concluded there was "no way to name or delete projects" when the features existed all along (rename + multi-select delete live in `ProjectsDialog`). New projects are named via a dialog (`showNewProject`), not silent auto-naming.
+
+# PDF export must downscale + yield (export.ts exportPdf)
+PDF export ("Building PDF…") froze forever on real decks of large photos. `exportPdf` draws each panel image to a canvas and `toDataURL('image/jpeg')`s it; at full source resolution across many large photos that blocks the main thread / OOMs with no error.
+**Rule:** cap each image's longest edge (~1600px) before drawing, encode JPEG at ~0.85, lay out from the downscaled dimensions, `await` a rAF between pages so the overlay paints, report progress, and wrap each panel's image in try/catch (one unreadable blob must not abort the whole export). Throw a clear message if zero images rendered.
+**Why:** there was no progress and no error path, so a slow/frozen export was indistinguishable from a dead one.
+
+# Sonner Toaster was never mounted — error toasts silently vanished
+The app mounts the shadcn `Toaster` (`@/components/ui/toaster`, driven by `useToast`) in App.tsx, but several call sites use `toast` from `sonner`. The sonner `<Toaster>` (`@/components/ui/sonner`) must ALSO be mounted in App.tsx or every `sonner` toast (export success/failure, create-project errors) renders nothing.
+**Rule:** if you call `toast` from `sonner`, confirm `<SonnerToaster />` is mounted; the two toast systems are independent and only the one whose provider is mounted will show.

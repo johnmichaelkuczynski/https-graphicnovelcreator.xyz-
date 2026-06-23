@@ -57,30 +57,52 @@ async function blobToImage(blob: Blob): Promise<HTMLImageElement> {
   }
 }
 
-// Re-encode any image into a JPEG data URL so jsPDF always accepts it.
-function imageToJpegDataUrl(img: HTMLImageElement): string {
+// Re-encode any image into a downscaled JPEG data URL so jsPDF always accepts
+// it and a deck of large photos can't freeze the main thread / blow up memory.
+// Returns the encoded dimensions too, so the caller lays out from the real
+// (downscaled) size, not the source's natural megapixels.
+const PDF_MAX_EDGE = 1600;
+function imageToJpegDataUrl(img: HTMLImageElement): { dataUrl: string; width: number; height: number } {
+  const srcW = img.naturalWidth || img.width;
+  const srcH = img.naturalHeight || img.height;
+  const scale = Math.min(1, PDF_MAX_EDGE / Math.max(srcW, srcH || 1));
+  const width = Math.max(1, Math.round(srcW * scale));
+  const height = Math.max(1, Math.round(srcH * scale));
+
   const canvas = document.createElement('canvas');
-  canvas.width = img.naturalWidth || img.width;
-  canvas.height = img.naturalHeight || img.height;
+  canvas.width = width;
+  canvas.height = height;
   const ctx = canvas.getContext('2d')!;
   ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.drawImage(img, 0, 0);
-  return canvas.toDataURL('image/jpeg', 0.92);
+  ctx.fillRect(0, 0, width, height);
+  ctx.drawImage(img, 0, 0, width, height);
+  return { dataUrl: canvas.toDataURL('image/jpeg', 0.85), width, height };
 }
 
-export async function exportPdf(panels: Panel[], projectName: string) {
+// Yield to the event loop so the progress UI can paint and the tab never looks
+// frozen while we crunch a large deck.
+const nextFrame = () =>
+  new Promise<void>((resolve) => {
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => resolve());
+    else setTimeout(resolve, 0);
+  });
+
+export async function exportPdf(
+  panels: Panel[],
+  projectName: string,
+  onProgress?: (fraction: number) => void,
+) {
+  if (panels.length === 0) throw new Error('There are no panels to export. Add at least one panel first.');
+
   const pdf = new jsPDF({ unit: 'pt', format: 'a4' });
   const pageW = pdf.internal.pageSize.getWidth();
   const pageH = pdf.internal.pageSize.getHeight();
   const margin = 40;
+  let rendered = 0;
 
   for (let i = 0; i < panels.length; i++) {
     const panel = panels[i];
     if (i > 0) pdf.addPage();
-
-    const img = await blobToImage(panel.imageBlob);
-    const dataUrl = imageToJpegDataUrl(img);
 
     let y = margin;
     pdf.setFontSize(10);
@@ -97,13 +119,33 @@ export async function exportPdf(panels: Panel[], projectName: string) {
       y += lines.length * 18 + 12;
     }
 
-    const maxW = pageW - margin * 2;
-    const maxH = pageH - y - margin;
-    const ratio = Math.min(maxW / img.width, maxH / img.height);
-    const w = img.width * ratio;
-    const h = img.height * ratio;
-    const x = (pageW - w) / 2;
-    pdf.addImage(dataUrl, 'JPEG', x, y, w, h);
+    // One unreadable image must not abort the whole export — note it and move on.
+    try {
+      if (panel.imageBlob) {
+        const img = await blobToImage(panel.imageBlob);
+        const { dataUrl, width, height } = imageToJpegDataUrl(img);
+        const maxW = pageW - margin * 2;
+        const maxH = pageH - y - margin;
+        const ratio = Math.min(maxW / width, maxH / height);
+        const w = width * ratio;
+        const h = height * ratio;
+        const x = (pageW - w) / 2;
+        pdf.addImage(dataUrl, 'JPEG', x, y, w, h);
+        rendered++;
+      }
+    } catch {
+      pdf.setFontSize(11);
+      pdf.setTextColor(180, 60, 60);
+      pdf.text('[image could not be loaded]', margin, y + 16);
+    }
+
+    onProgress?.((i + 1) / panels.length);
+    // Let the UI breathe between pages.
+    await nextFrame();
+  }
+
+  if (rendered === 0) {
+    throw new Error('None of the panel images could be read, so the PDF would be blank.');
   }
 
   pdf.save(`${safeName(projectName) || 'graphic-novel'}.pdf`);
