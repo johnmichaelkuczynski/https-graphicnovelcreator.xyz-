@@ -36,6 +36,22 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
       creatingRef.current = true;
       (async () => {
         try {
+          // Re-read straight from IndexedDB before creating. The react-query
+          // cache can transiently read empty (e.g. a version-change/blocked
+          // open, or refetch latency with multiple tabs) even though projects
+          // really exist — auto-creating off that stale empty was producing a
+          // flood of duplicate "My First Project" entries. Only create when the
+          // database itself is genuinely empty.
+          const existing = await dbApi.getProjects();
+          if (existing.length > 0) {
+            await queryClient.invalidateQueries({ queryKey: ['projects'] });
+            const stored = localStorage.getItem(STORAGE_KEY);
+            const valid = stored && existing.some((p) => p.id === stored);
+            const next = valid ? stored! : existing[0].id;
+            setCurrentProjectIdState(next);
+            localStorage.setItem(STORAGE_KEY, next);
+            return;
+          }
           const project = await dbApi.createProject('My First Project');
           await queryClient.invalidateQueries({ queryKey: ['projects'] });
           setCurrentProjectIdState(project.id);

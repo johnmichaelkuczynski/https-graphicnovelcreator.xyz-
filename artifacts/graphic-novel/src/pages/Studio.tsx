@@ -13,6 +13,10 @@ import { DiagnosticsDialog } from '@/components/DiagnosticsDialog';
 import { LibraryImagePicker } from '@/components/LibraryImagePicker';
 import { LibraryImage } from '@/lib/db';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
+} from '@/components/ui/dialog';
 import {
   Play, Plus, Upload, Music, Image as ImageIcon, FileText, Film,
   FolderPlus, Trash2, ChevronDown, Loader2, LogOut, Wand2, Pencil, Sparkles, Activity,
@@ -28,6 +32,7 @@ import {
 import { exportPdf, exportVideo } from '@/lib/export';
 import { useQueryClient } from '@tanstack/react-query';
 import { useUser, useClerk } from '@clerk/react';
+import { toast } from 'sonner';
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
 
@@ -51,6 +56,8 @@ export default function Studio() {
   const [showConvert, setShowConvert] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [showProjects, setShowProjects] = useState(false);
+  const [showNewProject, setShowNewProject] = useState(false);
+  const [newProjectName, setNewProjectName] = useState('');
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [showLibraryPicker, setShowLibraryPicker] = useState(false);
@@ -116,9 +123,21 @@ export default function Studio() {
     if (audioInputRef.current) audioInputRef.current.value = '';
   };
 
-  const handleNewProject = async () => {
-    const project = await createProject.mutateAsync(`Project ${projects.length + 1}`);
-    setCurrentProjectId(project.id);
+  const openNewProject = () => {
+    setNewProjectName('');
+    setShowNewProject(true);
+  };
+
+  const handleCreateProject = async () => {
+    const name = newProjectName.trim() || `Project ${projects.length + 1}`;
+    try {
+      const project = await createProject.mutateAsync(name);
+      setCurrentProjectId(project.id);
+      setShowNewProject(false);
+      setNewProjectName('');
+    } catch {
+      toast.error('Could not create the project. Please try again.');
+    }
   };
 
   const doClearProject = async () => {
@@ -169,6 +188,44 @@ export default function Studio() {
       <EditImageDialog open={showEdit} onOpenChange={setShowEdit} />
 
       <ProjectsDialog open={showProjects} onOpenChange={setShowProjects} />
+
+      <Dialog open={showNewProject} onOpenChange={setShowNewProject}>
+        <DialogContent className="max-w-md border-2 border-border">
+          <DialogHeader>
+            <DialogTitle className="font-black uppercase tracking-tight">New Project</DialogTitle>
+            <DialogDescription>Give your project a name so you can tell it apart later.</DialogDescription>
+          </DialogHeader>
+          <Input
+            autoFocus
+            value={newProjectName}
+            onChange={(e) => setNewProjectName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                void handleCreateProject();
+              }
+            }}
+            placeholder="e.g. The Mountain Saga"
+            className="border-2 border-border font-bold"
+          />
+          <DialogFooter>
+            <Button
+              variant="outline"
+              className="border-2 border-border font-bold"
+              onClick={() => setShowNewProject(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              className="border-2 border-border font-bold"
+              disabled={createProject.isPending}
+              onClick={() => void handleCreateProject()}
+            >
+              {createProject.isPending ? 'Creating…' : 'Create Project'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <DiagnosticsDialog open={showDiagnostics} onOpenChange={setShowDiagnostics} />
 
@@ -230,31 +287,34 @@ export default function Studio() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-64 border-2 border-border">
-              <DropdownMenuLabel className="font-black uppercase text-xs">Your Projects</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              {projects.map((p) => (
-                <DropdownMenuItem
-                  key={p.id}
-                  onClick={() => setCurrentProjectId(p.id)}
-                  className={`font-bold cursor-pointer ${p.id === currentProjectId ? 'bg-accent text-accent-foreground' : ''}`}
-                >
-                  <span className="truncate">{p.name}</span>
-                </DropdownMenuItem>
-              ))}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={handleNewProject} className="font-bold cursor-pointer">
-                <FolderPlus className="w-4 h-4 mr-2" /> New Project
+              <DropdownMenuItem onClick={openNewProject} className="font-bold cursor-pointer">
+                <FolderPlus className="w-4 h-4 mr-2" /> New Project…
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => setShowProjects(true)} className="font-bold cursor-pointer">
-                <Pencil className="w-4 h-4 mr-2" /> Manage / Rename / Delete
+                <Pencil className="w-4 h-4 mr-2" /> Rename / Delete Projects…
               </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel className="font-black uppercase text-xs">
+                Switch Project ({projects.length})
+              </DropdownMenuLabel>
+              <div className="max-h-64 overflow-y-auto">
+                {projects.map((p) => (
+                  <DropdownMenuItem
+                    key={p.id}
+                    onClick={() => setCurrentProjectId(p.id)}
+                    className={`font-bold cursor-pointer ${p.id === currentProjectId ? 'bg-accent text-accent-foreground' : ''}`}
+                  >
+                    <span className="truncate">{p.name}</span>
+                  </DropdownMenuItem>
+                ))}
+              </div>
             </DropdownMenuContent>
           </DropdownMenu>
 
           <Button
             variant="outline"
             className="bg-card border-2 border-border brutal-shadow brutal-shadow-hover font-bold hidden sm:inline-flex"
-            onClick={handleNewProject}
+            onClick={openNewProject}
           >
             <FolderPlus className="w-4 h-4 mr-2" /> New
           </Button>

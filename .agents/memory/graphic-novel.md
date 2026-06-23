@@ -54,3 +54,11 @@ Three GLOBAL (non-project-scoped) IndexedDB stores — `library_images`, `librar
 
 # Export self-test diagnostic (diagnostics.ts + DiagnosticsDialog.tsx)
 An always-enabled "Self-Test" header button (standalone — NOT inside the panel-gated Download menu, or it's unreachable with 0 panels) builds synthetic novels (1/3/8/24 panels, distinct solid-color frames, ±synthetic WAV audio), renders each via `renderVideoBlob`, then DECODES the produced webm in a `<video>`: asserts duration ≈ expected and seeks each panel midpoint, samples avg frame color, and asserts consecutive panels DIFFER (`colorDist < 12` ⇒ frozen ⇒ fail). This is the regression oracle for the freeze bug — keep it working. `renderVideoBlob(panels, tracks, onProgress)` returns `{blob, ext}`; `exportVideo` wraps it + downloads.
+
+# Auto-create-on-empty must read IndexedDB directly, not the react-query cache
+The "ensure at least one project" bootstrap in `project-context.tsx` creates "My First Project" when the projects list is empty. It must re-read `dbApi.getProjects()` straight from IndexedDB *inside* the create guard and skip creation if the DB actually has projects.
+**Why:** the react-query `['projects']` cache can transiently read empty (multi-tab, a version-change/blocked DB open, or refetch latency) even though projects exist — auto-creating off that stale-empty produced a flood of dozens of duplicate "My First Project" entries that the user could not get rid of. A ref guard alone does not cover it because the empty can recur across loads.
+**How to apply:** any "create a default X if none exist" effect backed by a cached query must confirm emptiness against the source of truth (IndexedDB here) before writing. Not fully duplicate-proof under true concurrent multi-tab creation (no DB-level lock), but covers the stale-cache cause.
+
+# Project switcher dropdown ordering (Studio.tsx)
+Put the New/Manage actions ABOVE the project list, and wrap the list in a `max-h-64 overflow-y-auto` div. **Why:** with many projects the list pushed New/Rename/Delete below the fold, making them unreachable — the user concluded there was "no way to name or delete projects" when the features existed all along (rename + multi-select delete live in `ProjectsDialog`). New projects are named via a dialog (`showNewProject`), not silent auto-naming.
