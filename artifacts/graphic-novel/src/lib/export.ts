@@ -2,6 +2,7 @@ import { jsPDF } from 'jspdf';
 import fixWebmDuration from 'fix-webm-duration';
 import { Muxer, ArrayBufferTarget } from 'webm-muxer';
 import { Panel, AudioTrack, getPanelImages } from './db';
+import { collageRows } from './collage';
 
 export function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
@@ -95,31 +96,26 @@ async function loadPanelImages(panel: Panel): Promise<HTMLImageElement[]> {
 
 interface Rect { x: number; y: number; w: number; h: number }
 
-// Layout for 1–4 images inside a box. Mirrors the on-screen ImageCollage: 1 full,
-// 2 side-by-side, 3 = two on top + one spanning the bottom, 4 = even 2x2.
+// Layout for 1–8 images inside a box, laid out in rows. Mirrors the on-screen
+// ImageCollage by sharing `collageRows` (1 full, 2 side-by-side, 3 = two on top
+// + one spanning the bottom, 4 = 2x2, and so on up to 8).
 function collageRects(count: number, x: number, y: number, w: number, h: number, gap: number): Rect[] {
   if (count <= 1) return [{ x, y, w, h }];
-  const colW = (w - gap) / 2;
-  if (count === 2) {
-    return [
-      { x, y, w: colW, h },
-      { x: x + colW + gap, y, w: colW, h },
-    ];
+  const rows = collageRows(count);
+  const nRows = rows.length;
+  const rowH = (h - gap * (nRows - 1)) / nRows;
+  const rects: Rect[] = [];
+  let ry = y;
+  for (const rowLen of rows) {
+    const tileW = (w - gap * (rowLen - 1)) / rowLen;
+    let rx = x;
+    for (let i = 0; i < rowLen; i++) {
+      rects.push({ x: rx, y: ry, w: tileW, h: rowH });
+      rx += tileW + gap;
+    }
+    ry += rowH + gap;
   }
-  const rowH = (h - gap) / 2;
-  if (count === 3) {
-    return [
-      { x, y, w: colW, h: rowH },
-      { x: x + colW + gap, y, w: colW, h: rowH },
-      { x, y: y + rowH + gap, w, h: rowH },
-    ];
-  }
-  return [
-    { x, y, w: colW, h: rowH },
-    { x: x + colW + gap, y, w: colW, h: rowH },
-    { x, y: y + rowH + gap, w: colW, h: rowH },
-    { x: x + colW + gap, y: y + rowH + gap, w: colW, h: rowH },
-  ];
+  return rects;
 }
 
 // Draw an image to cover the rect (crop-to-fill, centered) — the canvas

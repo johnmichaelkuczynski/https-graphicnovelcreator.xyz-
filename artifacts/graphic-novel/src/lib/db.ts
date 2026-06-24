@@ -11,7 +11,7 @@ export interface Project {
 // The first image always lives in `imageBlob` (so every reader that predates
 // multi-image still shows something and no IndexedDB migration is needed);
 // images 2..N live in the optional `extraImages` array.
-export const MAX_PANEL_IMAGES = 4;
+export const MAX_PANEL_IMAGES = 8;
 
 export interface Panel {
   id: string;

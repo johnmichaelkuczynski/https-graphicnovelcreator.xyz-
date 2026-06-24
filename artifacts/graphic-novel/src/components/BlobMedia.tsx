@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { collageRows } from '@/lib/collage';
 
 // Creates (and revokes) one object URL per blob. The caller must pass a stable
 // `blobs` array reference (e.g. via useMemo keyed on the panel) so URLs aren't
@@ -13,10 +14,10 @@ function useObjectUrls(blobs: Blob[]): string[] {
   return urls;
 }
 
-// Renders 1–4 panel images as a collage of cover tiles. A single image fills
+// Renders 1–8 panel images as a collage of cover tiles. A single image fills
 // the area (matching the grid thumbnail's existing look); multiple images are
-// shown as an even grid. With 3 images the third spans the full bottom row.
-// Pass `onRemove` to show a per-tile remove button on hover.
+// laid out in rows (see `collageRows`) so the same arrangement is used in the
+// PDF/video export. Pass `onRemove` to show a per-tile remove button on hover.
 export function ImageCollage({
   blobs,
   className,
@@ -42,24 +43,31 @@ export function ImageCollage({
     );
   }
 
+  const rows = collageRows(count);
+  let start = 0;
+
   return (
-    <div
-      className={`grid gap-0.5 bg-border ${className ?? ''}`}
-      style={{
-        gridTemplateColumns: '1fr 1fr',
-        gridTemplateRows: count <= 2 ? '1fr' : '1fr 1fr',
-      }}
-    >
-      {urls.map((url, i) => (
-        <div
-          key={i}
-          className="relative overflow-hidden bg-muted group/tile"
-          style={count === 3 && i === 2 ? { gridColumn: '1 / span 2' } : undefined}
-        >
-          <img src={url} className="w-full h-full object-cover" alt="" />
-          {onRemove && <RemoveTileButton onClick={() => onRemove(i)} />}
-        </div>
-      ))}
+    <div className={`flex flex-col gap-0.5 bg-border ${className ?? ''}`}>
+      {rows.map((rowLen, r) => {
+        const s = start;
+        start += rowLen;
+        return (
+          <div key={r} className="flex gap-0.5 flex-1 min-h-0">
+            {urls.slice(s, s + rowLen).map((url, j) => {
+              const i = s + j;
+              return (
+                <div
+                  key={i}
+                  className="relative overflow-hidden bg-muted group/tile flex-1 min-w-0"
+                >
+                  <img src={url} className="w-full h-full object-cover" alt="" />
+                  {onRemove && <RemoveTileButton onClick={() => onRemove(i)} />}
+                </div>
+              );
+            })}
+          </div>
+        );
+      })}
     </div>
   );
 }
