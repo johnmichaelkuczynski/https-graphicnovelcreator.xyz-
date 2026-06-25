@@ -1,15 +1,16 @@
 import React, { useState, useRef, useMemo } from 'react';
-import { Panel, MAX_PANEL_IMAGES, getPanelImages } from '@/lib/db';
+import { Panel, MAX_PANEL_IMAGES, getPanelImages, LibraryImage } from '@/lib/db';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { ImageCollage } from './BlobMedia';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Trash2, GripVertical, Image as ImageIcon, Plus, Clock, Download, Music, X } from 'lucide-react';
+import { Trash2, GripVertical, Image as ImageIcon, Plus, Clock, Download, Music, X, Upload, Library } from 'lucide-react';
 import { useSavePanel, useDeletePanel } from '@/hooks/use-novel';
 import { Textarea } from '@/components/ui/textarea';
 import { downloadPanelImage } from '@/lib/export';
 import { SpeakControl } from './SpeakControl';
+import { LibraryImagePicker } from './LibraryImagePicker';
 
 export function PanelItem({ 
   panel, 
@@ -29,6 +30,8 @@ export function PanelItem({
   const [caption, setCaption] = useState(panel.caption);
   const [duration, setDuration] = useState(panel.durationSeconds.toString());
   
+  const [showLibraryPicker, setShowLibraryPicker] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const addInputRef = useRef<HTMLInputElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
@@ -85,6 +88,14 @@ export function PanelItem({
       }
     }
     if (addInputRef.current) addInputRef.current.value = '';
+  };
+
+  const handleAddFromLibrary = (picked: LibraryImage[]) => {
+    const room = MAX_PANEL_IMAGES - images.length;
+    const toAdd = picked.slice(0, Math.max(0, room)).map((img) => img.imageBlob);
+    if (toAdd.length) {
+      savePanel.mutate({ ...panel, extraImages: [...(panel.extraImages ?? []), ...toAdd] });
+    }
   };
 
   const handleRemoveImage = (idx: number) => {
@@ -289,18 +300,39 @@ export function PanelItem({
             <ImageIcon className="w-4 h-4 mr-1" /> Replace
           </Button>
           {images.length < MAX_PANEL_IMAGES && (
-            <Button
-              size="sm"
-              variant="outline"
-              className="border-2 border-border bg-background brutal-shadow-sm font-bold"
-              onClick={() => addInputRef.current?.click()}
-              title={`Add more photos to this panel (up to ${MAX_PANEL_IMAGES})`}
-            >
-              <Plus className="w-4 h-4 mr-1" /> Add photo ({images.length}/{MAX_PANEL_IMAGES})
-            </Button>
+            <>
+              <Button
+                size="sm"
+                variant="outline"
+                className="border-2 border-border bg-background brutal-shadow-sm font-bold"
+                onClick={() => addInputRef.current?.click()}
+                title={`Add photos from your computer (up to ${MAX_PANEL_IMAGES})`}
+              >
+                <Upload className="w-4 h-4 mr-1" /> Add photo ({images.length}/{MAX_PANEL_IMAGES})
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="border-2 border-border bg-background brutal-shadow-sm font-bold"
+                onClick={() => setShowLibraryPicker(true)}
+                title="Add photos from your Library"
+              >
+                <Library className="w-4 h-4 mr-1" /> Library
+              </Button>
+            </>
           )}
         </div>
       </div>
+
+      <LibraryImagePicker
+        open={showLibraryPicker}
+        onOpenChange={setShowLibraryPicker}
+        onConfirm={handleAddFromLibrary}
+        title="Add photos from Library"
+        description="Pick saved images to add to this panel."
+        confirmLabel={(n) => `Add ${n > 0 ? n : ''} Photo${n === 1 ? '' : 's'}`}
+        maxSelect={MAX_PANEL_IMAGES - images.length}
+      />
     </div>
   );
 }

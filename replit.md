@@ -26,7 +26,8 @@ A browser-based studio for assembling graphic novels from your own uploaded imag
   - `src/lib/db.ts` — IndexedDB schema (projects / panels / audio_tracks + the three global cross-project libraries: library_images / library_documents / library_instructions), source of truth for the data model.
   - `src/hooks/use-library.ts` — react-query hooks (query/save/delete) for the three cross-project libraries.
   - `src/pages/Library.tsx` — the `/library` page (3 tabs: Images / Documents / Instructions) for uploading/writing and managing reusable assets.
-  - `src/components/LibraryImagePicker.tsx` — Studio "Add Panels → From Library" picker that adds saved library images as panels.
+  - `src/components/LibraryImagePicker.tsx` — reusable saved-images picker (parameterized title/description/confirmLabel/maxSelect). Used both by Studio "Add Panels → From Library" (adds panels) and by a single panel's "Library" button (appends to that panel).
+  - `src/components/PanelItem.tsx` — per-panel hover controls: "Replace", "Add photo (N/8)" (from computer), and "Library" (from the saved image library). Both add paths append to the same panel up to MAX_PANEL_IMAGES; they use plain buttons (not a dropdown) because native file dialogs don't reliably open from inside a Radix menu portal.
   - `src/lib/ai-client.ts` — Text→Novel conversion logic (script + image generation, style consistency) plus `editImage()` (image-to-image; downscales client-side, posts raw PNG). Talks only to our own `/api/ai/*`; no provider/keys client-side.
   - `src/components/EditImageDialog.tsx` — "Edit Photo" feature: upload an image, describe the change in plain words, strength slider, then add result as a panel / download / re-edit.
   - `src/lib/style-presets.ts` — drawing-style presets (incl. token-light `stick`).

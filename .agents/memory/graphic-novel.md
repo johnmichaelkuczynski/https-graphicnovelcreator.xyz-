@@ -77,6 +77,11 @@ A panel can hold up to MAX_PANEL_IMAGES (8) photos; default 1. Storage keeps `im
 Rendering is unified by `ImageCollage` (BlobMedia.tsx, flex rows) AND export.ts `collageRects` (canvas pixel rects), both driven by the SINGLE shared `collageRows(count)` in `src/lib/collage.ts` (tiles-per-row: 1→full, 2→[2], 3→[2,1] two-up+full-width bottom, 4→[2,2], 5→[2,3], 6→[3,3], 7→[3,4], 8→[4,4]). **To change any collage arrangement edit ONLY `collageRows` — DOM and export both read it so they never drift.** Single-image keeps its old "fit/contain" path in preview + PDF to avoid visual regressions.
 **Gotcha:** pass a STABLE array to ImageCollage (useMemo keyed on `panel.imageBlob`+`panel.extraImages`) or `useObjectUrls` recreates/revokes object URLs every render → flicker.
 
+# Native file dialog won't open from inside a Radix DropdownMenu item
+A hidden `<input type=file>` triggered from a Radix `DropdownMenuItem` (via onClick `.click()`, onSelect+preventDefault+setTimeout, OR a `<label htmlFor>` with `asChild`) does NOT reliably open the browser's native file chooser — the menu closes / portal teardown severs the user-gesture chain, so nothing opens and the click is effectively lost.
+**Why:** cost real debugging — three dropdown variants all failed identically (file chooser never opened; in e2e the upload fell through to another visible file input and created the wrong records).
+**How to apply:** trigger file inputs from a PLAIN button with a direct `onClick={() => ref.current?.click()}` that is NOT inside a Radix menu/popover portal. In this app the panel "Replace" button is the proven pattern; the per-panel "Add photo" (computer) + "Library" controls are two plain hover-bar buttons, not a dropdown, for exactly this reason. State-only actions (opening a dialog) inside a Radix menu are fine — only the native file-dialog gesture breaks.
+
 # No React error boundary — runtime errors are app-fatal
 The Studio page is NOT wrapped in a React error boundary, so ANY render-time exception (e.g. a `ReferenceError` from an incomplete handler/identifier rename) white-screens the ENTIRE studio, not just the offending component — it surfaces to the user as "creating/doing X failed utterly".
 **Why:** a header "New Project" button once called a renamed-away `handleNewProject`; the throw crashed all of Studio via React's default (no boundary) behavior.

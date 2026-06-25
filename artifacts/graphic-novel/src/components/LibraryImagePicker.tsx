@@ -13,10 +13,18 @@ export function LibraryImagePicker({
   open,
   onOpenChange,
   onConfirm,
+  title = 'Add from Library',
+  description = 'Pick saved images to add as panels in this project.',
+  confirmLabel = (n) => `Add ${n > 0 ? n : ''} Panel${n === 1 ? '' : 's'}`,
+  maxSelect,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   onConfirm: (images: LibraryImage[]) => void | Promise<void>;
+  title?: string;
+  description?: string;
+  confirmLabel?: (count: number) => string;
+  maxSelect?: number;
 }) {
   const { data: images = [], isLoading } = useLibraryImages();
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -27,11 +35,16 @@ export function LibraryImagePicker({
     if (open) setSelected(new Set());
   }, [open]);
 
+  const atLimit = maxSelect != null && selected.size >= maxSelect;
+
   const toggle = (id: string) => {
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
-      else next.add(id);
+      else {
+        if (maxSelect != null && next.size >= maxSelect) return prev;
+        next.add(id);
+      }
       return next;
     });
   };
@@ -53,10 +66,17 @@ export function LibraryImagePicker({
       <DialogContent className="max-w-2xl border-4 border-border brutal-shadow max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-2xl font-black uppercase flex items-center gap-2">
-            <ImageIcon className="w-6 h-6" /> Add from Library
+            <ImageIcon className="w-6 h-6" /> {title}
           </DialogTitle>
           <DialogDescription className="font-medium">
-            Pick saved images to add as panels in this project.
+            {description}
+            {maxSelect != null && (
+              <span className="block mt-1 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                {atLimit
+                  ? `Limit reached — deselect one to pick another.`
+                  : `Choose up to ${maxSelect}.`}
+              </span>
+            )}
           </DialogDescription>
         </DialogHeader>
 
@@ -118,7 +138,7 @@ export function LibraryImagePicker({
               className="bg-primary text-primary-foreground border-2 border-border brutal-shadow brutal-shadow-hover font-black uppercase tracking-tight disabled:opacity-50"
             >
               {adding ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-              Add {selected.size > 0 ? selected.size : ''} Panel{selected.size === 1 ? '' : 's'}
+              {confirmLabel(selected.size)}
             </Button>
           </DialogFooter>
         )}
