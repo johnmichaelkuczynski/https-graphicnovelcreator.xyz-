@@ -21,8 +21,17 @@ const features = [
 ];
 
 export default function Landing() {
+  const authFailed =
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).get("error") === "auth_failed";
+
   return (
     <div className="min-h-[100dvh] flex flex-col bg-background selection:bg-primary selection:text-primary-foreground">
+      {authFailed && (
+        <div className="bg-destructive text-destructive-foreground border-b-4 border-border px-6 py-3 text-center font-bold">
+          Sign-in didn't complete. Please try again.
+        </div>
+      )}
       <header className="border-b-4 border-border px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-primary border-2 border-border brutal-shadow flex items-center justify-center font-bold text-xl">

@@ -1,11 +1,11 @@
 import express, { Router, type IRouter } from "express";
 import { z } from "zod";
-import { requireAuth } from "../middlewares/requireAuth";
+import { isAuthenticated } from "../auth";
 
 const router: IRouter = Router();
 
 // Every AI route requires a signed-in session.
-router.use(requireAuth);
+router.use(isAuthenticated);
 
 const messageSchema = z.object({
   role: z.enum(["system", "user", "assistant"]),

@@ -466,17 +466,17 @@ export default function Studio() {
                 className="bg-card border-2 border-border brutal-shadow brutal-shadow-hover font-bold gap-2"
               >
                 <span className="w-6 h-6 bg-primary border-2 border-border flex items-center justify-center text-xs font-black uppercase shrink-0">
-                  {(user?.name?.[0] ?? user?.email?.[0] ?? 'U').toUpperCase()}
+                  {(user?.displayName?.[0] ?? user?.email?.[0] ?? user?.username?.[0] ?? 'U').toUpperCase()}
                 </span>
                 <span className="hidden md:inline max-w-[8rem] truncate">
-                  {user?.name ?? user?.email ?? 'Account'}
+                  {user?.displayName ?? user?.username ?? user?.email ?? 'Account'}
                 </span>
                 <ChevronDown className="w-4 h-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56 border-2 border-border">
               <DropdownMenuLabel className="font-black uppercase text-xs truncate">
-                {user?.email ?? 'Signed in'}
+                {user?.email ?? user?.username ?? 'Signed in'}
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuItem

@@ -36,7 +36,7 @@ function AuthDataGuard() {
 
   useEffect(() => {
     if (isLoading) return;
-    const userId = user?.id ?? null;
+    const userId = user ? String(user.id) : null;
     const previous = localStorage.getItem(LAST_USER_KEY);
 
     const wipeLocalData = () => {

@@ -1,10 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 
 export interface AuthUser {
-  id: string;
-  email: string;
-  name: string | null;
-  avatarUrl: string | null;
+  id: number;
+  username: string;
+  email: string | null;
+  displayName: string | null;
 }
 
 export const AUTH_QUERY_KEY = ["auth", "me"] as const;
@@ -13,8 +13,7 @@ async function fetchMe(): Promise<AuthUser | null> {
   const res = await fetch("/api/auth/me", { credentials: "include" });
   if (res.status === 401) return null;
   if (!res.ok) throw new Error("Could not load your session.");
-  const data = (await res.json()) as { user: AuthUser };
-  return data.user;
+  return (await res.json()) as AuthUser;
 }
 
 export function useAuth() {

@@ -1,17 +1,11 @@
 import express, { type Express } from "express";
 import cors from "cors";
-import session from "express-session";
-import connectPgSimple from "connect-pg-simple";
 import pinoHttp from "pino-http";
-import { pool } from "@workspace/db";
-import passport from "./lib/passport";
 import router from "./routes";
 import { logger } from "./lib/logger";
+import { setupAuth } from "./auth";
 
 const app: Express = express();
-
-// Behind the Replit reverse proxy — needed so secure cookies work in production.
-app.set("trust proxy", 1);
 
 app.use(
   pinoHttp({
@@ -35,37 +29,13 @@ app.use(
 
 app.use(cors({ credentials: true, origin: true }));
 
-const sessionSecret = process.env.SESSION_SECRET;
-if (!sessionSecret) {
-  throw new Error("SESSION_SECRET must be set to run the auth session store.");
-}
-
-const PgSession = connectPgSimple(session);
-
-app.use(
-  session({
-    store: new PgSession({
-      pool,
-      createTableIfMissing: true,
-      tableName: "user_sessions",
-    }),
-    secret: sessionSecret,
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
-    },
-  }),
-);
-
-app.use(passport.initialize());
-app.use(passport.session());
-
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Wire up authentication (trust proxy, session store, passport, and the
+// /api/auth/* + /api/admin/* routes). Must run before the API router so that
+// req.isAuthenticated() is available to the auth-gated /api/ai/* routes.
+setupAuth(app);
 
 app.use("/api", router);
 
