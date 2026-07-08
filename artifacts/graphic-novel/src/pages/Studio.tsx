@@ -31,7 +31,9 @@ import {
 } from '@/components/ui/alert-dialog';
 import { exportPdf, exportVideo } from '@/lib/export';
 import { useQueryClient } from '@tanstack/react-query';
-import { useUser, useClerk } from '@clerk/react';
+import { useAuth } from '@/hooks/use-auth';
+import { STORAGE_KEY } from '@/lib/project-context';
+import { dbApi } from '@/lib/db';
 import { toast } from 'sonner';
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
@@ -39,8 +41,24 @@ const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
 export default function Studio() {
   const { projects, currentProjectId, currentProject, setCurrentProjectId, isReady } = useProjectContext();
   const queryClient = useQueryClient();
-  const { user } = useUser();
-  const { signOut } = useClerk();
+  const { user } = useAuth();
+
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+    } catch {
+      // Even if the network call fails, still clear local data below.
+    }
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem('gnc:last-user-id');
+    try {
+      await dbApi.clearAllData();
+    } catch {
+      // ignore
+    }
+    queryClient.clear();
+    window.location.href = basePath || '/';
+  };
 
   const { data: panels = [], isLoading: panelsLoading } = usePanels();
   const { data: audioTracks = [] } = useAudioTracks();
@@ -448,21 +466,21 @@ export default function Studio() {
                 className="bg-card border-2 border-border brutal-shadow brutal-shadow-hover font-bold gap-2"
               >
                 <span className="w-6 h-6 bg-primary border-2 border-border flex items-center justify-center text-xs font-black uppercase shrink-0">
-                  {(user?.firstName?.[0] ?? user?.primaryEmailAddress?.emailAddress?.[0] ?? 'U').toUpperCase()}
+                  {(user?.name?.[0] ?? user?.email?.[0] ?? 'U').toUpperCase()}
                 </span>
                 <span className="hidden md:inline max-w-[8rem] truncate">
-                  {user?.firstName ?? user?.primaryEmailAddress?.emailAddress ?? 'Account'}
+                  {user?.name ?? user?.email ?? 'Account'}
                 </span>
                 <ChevronDown className="w-4 h-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56 border-2 border-border">
               <DropdownMenuLabel className="font-black uppercase text-xs truncate">
-                {user?.primaryEmailAddress?.emailAddress ?? 'Signed in'}
+                {user?.email ?? 'Signed in'}
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuItem
-                onClick={() => signOut({ redirectUrl: basePath || '/' })}
+                onClick={() => void handleLogout()}
                 className="font-bold cursor-pointer text-destructive focus:text-destructive"
               >
                 <LogOut className="w-4 h-4 mr-2" /> Log Out

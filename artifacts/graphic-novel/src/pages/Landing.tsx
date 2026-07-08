@@ -1,6 +1,6 @@
-import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { BookOpen, ImagePlus, Music, Film } from "lucide-react";
+import { signInWithGoogle } from "@/hooks/use-auth";
 
 const features = [
   {
@@ -21,8 +21,6 @@ const features = [
 ];
 
 export default function Landing() {
-  const [, setLocation] = useLocation();
-
   return (
     <div className="min-h-[100dvh] flex flex-col bg-background selection:bg-primary selection:text-primary-foreground">
       <header className="border-b-4 border-border px-6 py-4 flex items-center justify-between">
@@ -38,13 +36,13 @@ export default function Landing() {
           <Button
             variant="outline"
             className="bg-card border-2 border-border brutal-shadow brutal-shadow-hover font-bold"
-            onClick={() => setLocation("/sign-in")}
+            onClick={signInWithGoogle}
           >
             Sign In
           </Button>
           <Button
             className="bg-primary text-primary-foreground border-2 border-border brutal-shadow brutal-shadow-hover font-black uppercase tracking-tight hover:bg-primary/90"
-            onClick={() => setLocation("/sign-up")}
+            onClick={signInWithGoogle}
           >
             Get Started
           </Button>
@@ -67,7 +65,7 @@ export default function Landing() {
             <Button
               size="lg"
               className="bg-primary text-primary-foreground border-2 border-border brutal-shadow brutal-shadow-hover font-black uppercase tracking-tight text-base px-8 hover:bg-primary/90"
-              onClick={() => setLocation("/sign-up")}
+              onClick={signInWithGoogle}
             >
               Start Creating — Free
             </Button>
@@ -75,7 +73,7 @@ export default function Landing() {
               size="lg"
               variant="outline"
               className="bg-card border-2 border-border brutal-shadow brutal-shadow-hover font-bold text-base px-8"
-              onClick={() => setLocation("/sign-in")}
+              onClick={signInWithGoogle}
             >
               Sign In
             </Button>

@@ -9,7 +9,8 @@ A browser-based studio for assembling graphic novels from your own uploaded imag
 - `pnpm run build` — typecheck + build all packages
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
 - `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+- Required env: `DATABASE_URL` (Postgres), `SESSION_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
+- Google OAuth redirect URI to register in Google Cloud Console: `https://<domain>/api/auth/google/callback` (dev = `REPLIT_DEV_DOMAIN`; after deploy also add the `.replit.app` prod domain)
 
 ## Stack
 
@@ -37,10 +38,13 @@ A browser-based studio for assembling graphic novels from your own uploaded imag
   - `src/lib/text-extract.ts` — client-side document text extraction (pdfjs-dist + mammoth, lazy-loaded).
   - `src/components/SpeakControl.tsx` — per-panel ElevenLabs character voice picker.
   - `src/lib/tts-client.ts` — calls the speech endpoints.
+- `artifacts/api-server/src/routes/auth.ts` + `src/lib/passport.ts` — custom Google OAuth (passport-google-oauth20). Routes: `/api/auth/google`, `/api/auth/google/callback`, `/api/auth/me`, `/api/auth/logout`. Sessions via `express-session` + `connect-pg-simple` (Postgres `user_sessions` table). `src/middlewares/requireAuth.ts` gates all `/api/ai/*`.
+- `artifacts/graphic-novel/src/hooks/use-auth.ts` — client auth: react-query hook on `/api/auth/me`, `signInWithGoogle()` full-page nav to `/api/auth/google`. `App.tsx`'s `AuthDataGuard` wipes IndexedDB + localStorage when the signed-in account changes or on sign-out (keyed on `gnc:last-user-id`).
 - `artifacts/api-server/src/routes/ai.ts` — auth-gated AI routes, all using backend env keys: `/api/ai/script` (Anthropic + Venice fallback), `/api/ai/image` (Dezgo Flux text2image, returns PNG bytes), `/api/ai/edit` (Dezgo `image2image` img2img — raw image body via `express.raw`, prompt/strength as query params, returns PNG), `/api/ai/voices` + `/api/ai/tts` (ElevenLabs), and `/api/ai/config` (reports readiness only).
 
 ## Architecture decisions
 
+- **Custom Google OAuth, not Clerk.** Auth is our own passport-google-oauth20 flow with server-side sessions (`express-session` + `connect-pg-simple`), keyed by the Google profile id in the `users` table. Cookies are `httpOnly` + `sameSite=lax` (+ `secure` in prod, behind `trust proxy`). OAuth `state` is enabled for CSRF protection. The app and API are same-origin through the shared proxy, so the browser sends the session cookie automatically.
 - **Backend-only AI keys.** Users never see, enter, or supply any key — there is no provider UI. All keys are env secrets used server-side: script via Anthropic (`claude-sonnet-4-6`, Venice `llama-3.3-70b` fallback), images via Dezgo Flux (`flux_1_schnell`), speech via ElevenLabs. The browser only calls our auth-gated `/api/ai/*`; hosts are fixed (no SSRF surface).
 - **Style consistency is enforced, not requested.** A fixed style prefix + a single shared seed are applied to every panel's image call, and the LLM is forbidden from emitting style words. See `.agents/memory/graphic-novel.md`.
 - **Everything client-side.** All novel data lives in the browser's IndexedDB; there is no server database for user content.

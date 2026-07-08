@@ -1,1 +1,2 @@
 - [Graphic Novel data model](graphic-novel.md) — multi-project IndexedDB schema, migration rule, and browser-export gotchas.
+- [Graphic Novel auth](graphic-novel-auth.md) — custom Google OAuth (not Clerk); redirect URI must be registered in Google Cloud Console per domain.

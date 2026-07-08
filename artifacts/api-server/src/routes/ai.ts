@@ -1,8 +1,11 @@
 import express, { Router, type IRouter } from "express";
-import { getAuth } from "@clerk/express";
 import { z } from "zod";
+import { requireAuth } from "../middlewares/requireAuth";
 
 const router: IRouter = Router();
+
+// Every AI route requires a signed-in session.
+router.use(requireAuth);
 
 const messageSchema = z.object({
   role: z.enum(["system", "user", "assistant"]),
@@ -140,12 +143,7 @@ function clampSteps(n: number | undefined): number {
 
 // Tells the client whether AI generation is ready (keys present). No secrets,
 // models, or provider details are ever sent to the browser.
-router.get("/ai/config", (req, res) => {
-  const { userId } = getAuth(req);
-  if (!userId) {
-    res.status(401).json({ error: "Sign in to use AI generation." });
-    return;
-  }
+router.get("/ai/config", (_req, res) => {
   const ready = !!(
     (process.env.ANTHROPIC_API_KEY || process.env.VENICE_API_KEY) &&
     process.env.DEZGO_API_KEY
@@ -154,12 +152,6 @@ router.get("/ai/config", (req, res) => {
 });
 
 router.post("/ai/script", async (req, res) => {
-  const { userId } = getAuth(req);
-  if (!userId) {
-    res.status(401).json({ error: "Sign in to use AI generation." });
-    return;
-  }
-
   const parsed = scriptSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "Invalid request", details: parsed.error.issues });
@@ -189,12 +181,6 @@ router.post("/ai/script", async (req, res) => {
 });
 
 router.post("/ai/image", async (req, res) => {
-  const { userId } = getAuth(req);
-  if (!userId) {
-    res.status(401).json({ error: "Sign in to use AI generation." });
-    return;
-  }
-
   const parsed = imageSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "Invalid request", details: parsed.error.issues });
@@ -250,11 +236,6 @@ router.post(
   "/ai/edit",
   express.raw({ type: ["image/*", "application/octet-stream"], limit: "12mb" }),
   async (req, res) => {
-    const { userId } = getAuth(req);
-    if (!userId) {
-      res.status(401).json({ error: "Sign in to use AI editing." });
-      return;
-    }
     const key = process.env.DEZGO_API_KEY;
     if (!key) {
       res.status(503).json({ error: "Image editing is not configured." });
@@ -331,11 +312,6 @@ const ttsSchema = z.object({
 });
 
 router.get("/ai/voices", async (req, res) => {
-  const { userId } = getAuth(req);
-  if (!userId) {
-    res.status(401).json({ error: "Sign in to use character voices." });
-    return;
-  }
   const key = elevenKey();
   if (!key) {
     res.status(503).json({ error: "Character voices are not configured." });
@@ -371,11 +347,6 @@ router.get("/ai/voices", async (req, res) => {
 });
 
 router.post("/ai/tts", async (req, res) => {
-  const { userId } = getAuth(req);
-  if (!userId) {
-    res.status(401).json({ error: "Sign in to use character voices." });
-    return;
-  }
   const key = elevenKey();
   if (!key) {
     res.status(503).json({ error: "Character voices are not configured." });
