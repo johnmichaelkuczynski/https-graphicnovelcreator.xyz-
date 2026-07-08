@@ -17,6 +17,7 @@ import NotFound from "@/pages/not-found";
 import Studio from "@/pages/Studio";
 import Library from "@/pages/Library";
 import Landing from "@/pages/Landing";
+import Administrative from "@/pages/Administrative";
 import { ProjectProvider, STORAGE_KEY } from "@/lib/project-context";
 import { dbApi } from "@/lib/db";
 import { useAuth } from "@/hooks/use-auth";
@@ -70,16 +71,26 @@ function FullScreenLoader() {
 }
 
 function AppRoutes() {
-  const { isSignedIn, isLoading } = useAuth();
+  const { isSignedIn, isAdmin, isLoading } = useAuth();
 
   if (isLoading) {
     return <FullScreenLoader />;
   }
 
+  // Signed-out visitors never see the app — every path shows the login gate.
+  if (!isSignedIn) {
+    return <Landing />;
+  }
+
   return (
     <Switch>
-      <Route path="/">{isSignedIn ? <Studio /> : <Landing />}</Route>
-      <Route path="/library">{isSignedIn ? <Library /> : <Landing />}</Route>
+      <Route path="/">
+        <Studio />
+      </Route>
+      <Route path="/library">
+        <Library />
+      </Route>
+      <Route path="/admin">{isAdmin ? <Administrative /> : <NotFound />}</Route>
       <Route component={NotFound} />
     </Switch>
   );

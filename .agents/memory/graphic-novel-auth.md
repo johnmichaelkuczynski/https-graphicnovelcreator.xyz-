@@ -17,5 +17,7 @@ Auth is the app's OWN Google OAuth, not Clerk. The implementation is a **user-su
 
 **How to apply / gotchas:**
 - App (served at `/`) and API (`/api`) are same-origin via the shared proxy, so the session cookie flows automatically; client fetches just use `credentials: "include"`. Do not add cross-origin/base-URL hacks.
+- **Full sign-in gate:** signed-out users must see NOTHING but the login gate. `AppRoutes` returns `<Landing />` for every path when not signed in — no route (Studio/Library/Admin/NotFound) is reachable unauthenticated. Keep this whenever adding routes.
+- **Admin-only Administrative page** (`/admin`, page `Administrative.tsx`): Google-login analytics (day/week/month/year/all-time stat cards + recharts bar charts) + a who-logged-in table, fed by `/api/admin/visits`. Server `isAdmin` (exact admin-email match) is the real gate (403 otherwise); the client `isAdmin` from `useAuth` (compares email to the same admin address, duplicated on purpose as UI-only) just shows/hides the `/admin` route and the Studio menu link.
 - Local-first data isolation: novels live only in the browser's IndexedDB. `AuthDataGuard` (in `App.tsx`) wipes IndexedDB + localStorage when the signed-in account id changes or on sign-out, tracked via localStorage key `gnc:last-user-id`. Preserve this whenever touching auth or the login flow, or one account can see another's local content.
 - OAuth `state: true` is set on the GoogleStrategy (CSRF protection) and relies on the session middleware being mounted before passport.

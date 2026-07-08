@@ -9,6 +9,11 @@ export interface AuthUser {
 
 export const AUTH_QUERY_KEY = ["auth", "me"] as const;
 
+// UI-only gate for the Administrative page/link. The real authorization is
+// enforced server-side by `isAdmin` in the API (which returns 403 otherwise);
+// this just decides whether to render the admin affordances.
+const ADMIN_EMAIL = "johnmichaelkuczynski@gmail.com";
+
 async function fetchMe(): Promise<AuthUser | null> {
   const res = await fetch("/api/auth/me", { credentials: "include" });
   if (res.status === 401) return null;
@@ -27,6 +32,7 @@ export function useAuth() {
   return {
     user: query.data ?? null,
     isSignedIn: !!query.data,
+    isAdmin: query.data?.email?.toLowerCase() === ADMIN_EMAIL,
     isLoading: query.isLoading,
   };
 }

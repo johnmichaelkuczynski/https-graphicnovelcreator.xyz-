@@ -20,7 +20,7 @@ import {
 import {
   Play, Plus, Upload, Music, Image as ImageIcon, FileText, Film,
   FolderPlus, Trash2, ChevronDown, Loader2, LogOut, Wand2, Pencil, Sparkles, Activity,
-  Library as LibraryIcon,
+  Library as LibraryIcon, Shield,
 } from 'lucide-react';
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuLabel,
@@ -41,7 +41,7 @@ const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
 export default function Studio() {
   const { projects, currentProjectId, currentProject, setCurrentProjectId, isReady } = useProjectContext();
   const queryClient = useQueryClient();
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
 
   const handleLogout = async () => {
     try {
@@ -479,6 +479,16 @@ export default function Studio() {
                 {user?.email ?? user?.username ?? 'Signed in'}
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
+              {isAdmin && (
+                <>
+                  <Link href="/admin">
+                    <DropdownMenuItem className="font-bold cursor-pointer">
+                      <Shield className="w-4 h-4 mr-2" /> Administrative
+                    </DropdownMenuItem>
+                  </Link>
+                  <DropdownMenuSeparator />
+                </>
+              )}
               <DropdownMenuItem
                 onClick={() => void handleLogout()}
                 className="font-bold cursor-pointer text-destructive focus:text-destructive"
