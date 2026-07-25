@@ -8,6 +8,8 @@ import { Input } from '@/components/ui/input';
 import { Trash2, GripVertical, Image as ImageIcon, Plus, Clock, Download, Music, X, Upload, Library } from 'lucide-react';
 import { useSavePanel, useDeletePanel } from '@/hooks/use-novel';
 import { Textarea } from '@/components/ui/textarea';
+import { validateAudioFile, AUDIO_ACCEPT } from '@/lib/audio-validate';
+import { toast } from '@/hooks/use-toast';
 import { downloadPanelImage } from '@/lib/export';
 import { SpeakControl } from './SpeakControl';
 import { LibraryImagePicker } from './LibraryImagePicker';
@@ -107,7 +109,12 @@ export function PanelItem({
   const handlePanelAudio = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      savePanel.mutate({ ...panel, audioBlob: file, audioName: file.name });
+      const problem = validateAudioFile(file);
+      if (problem) {
+        toast({ title: 'Audio not added', description: problem, variant: 'destructive' });
+      } else {
+        savePanel.mutate({ ...panel, audioBlob: file, audioName: file.name });
+      }
     }
     if (audioInputRef.current) audioInputRef.current.value = '';
   };
@@ -176,7 +183,7 @@ export function PanelItem({
           </div>
           <input
             type="file"
-            accept="audio/*"
+            accept={AUDIO_ACCEPT}
             className="hidden"
             ref={audioInputRef}
             onChange={handlePanelAudio}

@@ -21,6 +21,8 @@ import {
 } from '@/hooks/use-library';
 import { dbApi } from '@/lib/db';
 import { useQueryClient } from '@tanstack/react-query';
+import { validateAudioFile, AUDIO_ACCEPT } from '@/lib/audio-validate';
+import { toast } from '@/hooks/use-toast';
 
 export function ConvertDialog({
   open,
@@ -453,9 +455,20 @@ export function ConvertDialog({
             <input
               ref={audioRef}
               type="file"
-              accept="audio/*"
+              accept={AUDIO_ACCEPT}
               className="hidden"
-              onChange={(e) => setAudioFile(e.target.files?.[0] ?? null)}
+              onChange={(e) => {
+                const file = e.target.files?.[0] ?? null;
+                if (file) {
+                  const problem = validateAudioFile(file);
+                  if (problem) {
+                    toast({ title: 'Audio not added', description: problem, variant: 'destructive' });
+                    e.target.value = '';
+                    return;
+                  }
+                }
+                setAudioFile(file);
+              }}
             />
             <Button
               type="button"

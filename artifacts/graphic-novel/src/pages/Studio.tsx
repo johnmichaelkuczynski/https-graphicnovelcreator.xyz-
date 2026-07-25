@@ -30,6 +30,7 @@ import {
   AlertDialogTitle, AlertDialogDescription, AlertDialogAction, AlertDialogCancel,
 } from '@/components/ui/alert-dialog';
 import { exportPdf, exportVideo } from '@/lib/export';
+import { validateAudioFile, AUDIO_ACCEPT } from '@/lib/audio-validate';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/use-auth';
 import { STORAGE_KEY } from '@/lib/project-context';
@@ -129,6 +130,11 @@ export default function Studio() {
 
     let maxOrder = audioTracks.length > 0 ? Math.max(...audioTracks.map((t) => t.order)) : -1;
     for (const file of Array.from(files)) {
+      const problem = validateAudioFile(file);
+      if (problem) {
+        toast.error(problem);
+        continue;
+      }
       maxOrder += 1;
       await saveTrack.mutateAsync({
         id: crypto.randomUUID(),
@@ -358,7 +364,7 @@ export default function Studio() {
 
         <div className="flex items-center gap-3 flex-wrap">
           <input type="file" multiple accept="image/*" className="hidden" ref={fileInputRef} onChange={handleBatchImages} />
-          <input type="file" multiple accept="audio/*" className="hidden" ref={audioInputRef} onChange={handleBatchAudio} />
+          <input type="file" multiple accept={AUDIO_ACCEPT} className="hidden" ref={audioInputRef} onChange={handleBatchAudio} />
 
           <Button
             variant="outline"
