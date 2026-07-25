@@ -29,7 +29,9 @@ app.use(
 
 app.use(cors({ credentials: true, origin: true }));
 
-app.use(express.json());
+// Text -> Novel can post large source documents (whole books pasted or
+// extracted from PDFs), so the default 100kb JSON limit is far too small.
+app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 
 // Wire up authentication (trust proxy, session store, passport, and the
