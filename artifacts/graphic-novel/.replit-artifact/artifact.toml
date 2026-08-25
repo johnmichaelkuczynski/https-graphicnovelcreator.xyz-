@@ -29,3 +29,4 @@ to = "/index.html"
 [services.env]
 PORT = "26240"
 BASE_PATH = "/"
+VITE_SITE_URL = "https://graphicnovelcreator.ink"

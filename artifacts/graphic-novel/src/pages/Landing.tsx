@@ -97,22 +97,27 @@ export default function Landing() {
           </div>
         </div>
 
-        <div className="grid gap-6 sm:grid-cols-3 max-w-4xl w-full">
-          {features.map((f) => (
-            <div
-              key={f.title}
-              className="bg-card border-4 border-border brutal-shadow p-6 flex flex-col items-center gap-3 text-center"
-            >
-              <div className="w-12 h-12 bg-primary border-2 border-border flex items-center justify-center">
-                <f.icon className="w-6 h-6 text-primary-foreground" />
+        <section aria-labelledby="feature-section-title" className="w-full max-w-4xl">
+          <h2 id="feature-section-title" className="sr-only">
+            Create and Share Graphic Novels
+          </h2>
+          <div className="grid gap-6 sm:grid-cols-3 w-full">
+            {features.map((f) => (
+              <div
+                key={f.title}
+                className="bg-card border-4 border-border brutal-shadow p-6 flex flex-col items-center gap-3 text-center"
+              >
+                <div className="w-12 h-12 bg-primary border-2 border-border flex items-center justify-center">
+                  <f.icon className="w-6 h-6 text-primary-foreground" />
+                </div>
+                <h3 className="font-black uppercase tracking-tight">{f.title}</h3>
+                <p className="text-sm text-muted-foreground font-medium">
+                  {f.desc}
+                </p>
               </div>
-              <h3 className="font-black uppercase tracking-tight">{f.title}</h3>
-              <p className="text-sm text-muted-foreground font-medium">
-                {f.desc}
-              </p>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        </section>
       </main>
 
       <footer className="border-t-4 border-border px-6 py-4 flex items-center justify-center gap-4 text-center text-sm font-bold text-muted-foreground">
