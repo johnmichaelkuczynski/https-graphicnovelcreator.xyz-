@@ -2,7 +2,9 @@ import { useEffect } from "react";
 import {
   Switch,
   Route,
+  Redirect,
   Router as WouterRouter,
+  useLocation,
 } from "wouter";
 import {
   QueryClient,
@@ -25,6 +27,7 @@ import { useAuth } from "@/hooks/use-auth";
 const queryClient = new QueryClient();
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
+const privateRoutes = new Set(["/library", "/admin"]);
 
 // Remember which account last used this browser so we can wipe locally stored
 // novels whenever a different account (or a signed-out state) is detected —
@@ -72,14 +75,23 @@ function FullScreenLoader() {
 
 function AppRoutes() {
   const { isSignedIn, isAdmin, isLoading } = useAuth();
+  const [location] = useLocation();
 
+  // Keep the pre-rendered root landing markup stable while the auth query
+  // resolves. This lets hydrateRoot attach the sign-in handlers immediately;
+  // authenticated visitors transition to Studio as soon as the session is
+  // known.
   if (isLoading) {
-    return <FullScreenLoader />;
+    return location === "/" ? <Landing /> : <FullScreenLoader />;
   }
 
-  // Signed-out visitors never see the app — every path shows the login gate.
+  // The landing page is public only at the canonical root URL. Private routes
+  // must never render a copy of it under their own URL when signed out.
   if (!isSignedIn) {
-    return <Landing />;
+    if (privateRoutes.has(location)) {
+      return <Redirect to="/" replace />;
+    }
+    return location === "/" ? <Landing /> : <NotFound />;
   }
 
   return (

@@ -23,9 +23,12 @@ publicDir = "artifacts/graphic-novel/dist/public"
 serve = "static"
 
 [[services.production.rewrites]]
-from = "/*"
-to = "/index.html"
+from = "/admin"
+to = "/admin/index.html"
 
+[[services.production.rewrites]]
+from = "/admin"
+to = "/admin/index.html"
 [services.env]
 PORT = "26240"
 BASE_PATH = "/"

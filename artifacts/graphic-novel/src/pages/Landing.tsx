@@ -1,3 +1,4 @@
+import React from "react";
 import { Button } from "@/components/ui/button";
 import { BookOpen, ImagePlus, Music, Film } from "lucide-react";
 import { signInWithGoogle } from "@/hooks/use-auth";

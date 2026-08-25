@@ -1,3 +1,5 @@
+import React from "react";
+
 export function BrandMark() {
   return (
     <img
