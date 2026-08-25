@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { BookOpen, ImagePlus, Music, Film } from "lucide-react";
 import { signInWithGoogle } from "@/hooks/use-auth";
+import { BrandMark } from "@/components/BrandMark";
 
 const features = [
   {
@@ -34,14 +35,21 @@ export default function Landing() {
       )}
       <header className="border-b-4 border-border px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-primary border-2 border-border brutal-shadow flex items-center justify-center font-bold text-xl">
-            GN
-          </div>
+          <BrandMark />
           <span className="font-black uppercase tracking-tight text-lg hidden sm:inline">
             Graphic Novel Creator
           </span>
         </div>
         <div className="flex items-center gap-3">
+          <Button
+            asChild
+            variant="ghost"
+            className="hidden sm:inline-flex font-bold underline underline-offset-4"
+          >
+            <a href="https://zhisystems.org" target="_blank" rel="noreferrer">
+              Contact Us
+            </a>
+          </Button>
           <Button
             variant="outline"
             className="bg-card border-2 border-border brutal-shadow brutal-shadow-hover font-bold"
@@ -107,8 +115,17 @@ export default function Landing() {
         </div>
       </main>
 
-      <footer className="border-t-4 border-border px-6 py-4 text-center text-sm font-bold text-muted-foreground">
-        Graphic Novel Creator
+      <footer className="border-t-4 border-border px-6 py-4 flex items-center justify-center gap-4 text-center text-sm font-bold text-muted-foreground">
+        <span>Graphic Novel Creator</span>
+        <span aria-hidden="true">•</span>
+        <a
+          href="https://zhisystems.org"
+          target="_blank"
+          rel="noreferrer"
+          className="text-foreground underline underline-offset-4 hover:text-primary"
+        >
+          Contact Us
+        </a>
       </footer>
     </div>
   );

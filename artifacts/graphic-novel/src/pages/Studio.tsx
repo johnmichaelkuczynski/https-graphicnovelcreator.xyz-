@@ -35,6 +35,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/use-auth';
 import { STORAGE_KEY } from '@/lib/project-context';
 import { dbApi } from '@/lib/db';
+import { BrandMark } from '@/components/BrandMark';
 import { toast } from 'sonner';
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
@@ -303,9 +304,7 @@ export default function Studio() {
       {/* Top Navbar */}
       <header className="sticky top-0 z-40 bg-background border-b-4 border-border px-6 py-4 flex items-center justify-between gap-4 shadow-sm flex-wrap">
         <div className="flex items-center gap-4 min-w-0">
-          <div className="w-10 h-10 bg-primary border-2 border-border brutal-shadow flex items-center justify-center font-bold text-xl shrink-0">
-            GN
-          </div>
+          <BrandMark />
 
           {/* Project Switcher */}
           <DropdownMenu>

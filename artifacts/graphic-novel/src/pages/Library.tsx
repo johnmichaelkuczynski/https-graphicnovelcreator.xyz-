@@ -16,6 +16,7 @@ import {
   useLibraryInstructions, useSaveLibraryInstruction, useDeleteLibraryInstruction,
 } from '@/hooks/use-library';
 import { extractTextFromFile, ACCEPTED_TEXT_TYPES } from '@/lib/text-extract';
+import { BrandMark } from '@/components/BrandMark';
 
 
 function formatDate(ts: number) {
@@ -38,9 +39,7 @@ export default function Library() {
     <div className="min-h-screen flex flex-col bg-background">
       <header className="sticky top-0 z-40 bg-background border-b-4 border-border px-6 py-4 flex items-center justify-between gap-4 shadow-sm flex-wrap">
         <div className="flex items-center gap-4">
-          <div className="w-10 h-10 bg-primary border-2 border-border brutal-shadow flex items-center justify-center font-bold text-xl shrink-0">
-            GN
-          </div>
+          <BrandMark />
           <h1 className="text-2xl font-black uppercase tracking-tight">Your Library</h1>
         </div>
         <Link href="/">

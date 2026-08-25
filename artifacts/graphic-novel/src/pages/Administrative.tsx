@@ -12,6 +12,7 @@ import {
 } from 'recharts';
 import { ArrowLeft, Loader2, ShieldAlert, Users } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { BrandMark } from '@/components/BrandMark';
 import {
   Table,
   TableHeader,
@@ -135,6 +136,7 @@ export default function Administrative() {
               <ArrowLeft className="w-4 h-4" /> Studio
             </button>
           </Link>
+          <BrandMark />
           <h1 className="text-xl md:text-2xl font-black uppercase tracking-tight">
             Administrative
           </h1>
