@@ -76,7 +76,7 @@
   --destructive: 0 80% 50%;
   --destructive-foreground: 0 0% 100%;
 
-  --app-font-sans: 'Space Grotesk', 'Inter', sans-serif;
+  --app-font-sans: 'Space Grotesk', sans-serif;
   --app-font-serif: Georgia, serif;
   --app-font-mono: Menlo, monospace;
   --radius: 0px; /* Neo-brutalist sharp edges */
@@ -115,8 +115,6 @@
 }
 
 @layer base {
-  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
-  
   * {
     @apply border-border;
   }
