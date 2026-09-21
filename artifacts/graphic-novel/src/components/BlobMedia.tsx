@@ -81,7 +81,7 @@ function RemoveTileButton({ onClick }: { onClick: () => void }) {
         e.stopPropagation();
         onClick();
       }}
-      className="absolute top-1 right-1 z-10 w-6 h-6 flex items-center justify-center rounded-full bg-background/90 border-2 border-border text-foreground opacity-0 group-hover/img:opacity-100 hover:bg-destructive hover:text-white transition-opacity"
+      className="tile-remove absolute top-1 right-1 z-10 w-7 h-7 flex items-center justify-center rounded-full bg-background/90 border-2 border-border text-foreground opacity-0 group-hover/img:opacity-100 group-hover/tile:opacity-100 hover:bg-destructive hover:text-white transition-opacity"
     >
       <span className="text-xs font-bold leading-none">✕</span>
     </button>

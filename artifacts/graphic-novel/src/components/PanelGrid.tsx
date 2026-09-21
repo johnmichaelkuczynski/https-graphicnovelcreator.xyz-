@@ -101,7 +101,7 @@ export function PanelGrid({ panels, onAddImages }: { panels: Panel[]; onAddImage
         items={panels.map(p => p.id)}
         strategy={rectSortingStrategy}
       >
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-8 pb-32">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-6 sm:gap-8 pb-16 sm:pb-32">
           {panels.map((panel, index) => (
             <PanelItem 
               key={panel.id} 

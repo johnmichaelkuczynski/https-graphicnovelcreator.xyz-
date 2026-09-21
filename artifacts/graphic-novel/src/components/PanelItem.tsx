@@ -130,7 +130,7 @@ export function PanelItem({
       className={`relative group bg-card border-4 border-border flex flex-col brutal-shadow ${isDragging ? 'opacity-50' : 'hover:-translate-y-1 hover:shadow-[8px_8px_0_0_hsl(var(--foreground))]'} transition-all duration-200`}
     >
       {/* Insert Before Button - visible on hover */}
-      <div className="absolute -left-5 top-1/2 -translate-y-1/2 z-20 opacity-0 group-hover:opacity-100 transition-opacity">
+      <div className="panel-insert panel-insert-before absolute -left-5 top-1/2 -translate-y-1/2 z-20 opacity-0 group-hover:opacity-100 transition-opacity">
         <Button 
           size="icon" 
           variant="outline" 
@@ -142,7 +142,7 @@ export function PanelItem({
       </div>
       
       {/* Insert After Button - visible on hover */}
-      <div className="absolute -right-5 top-1/2 -translate-y-1/2 z-20 opacity-0 group-hover:opacity-100 transition-opacity">
+      <div className="panel-insert panel-insert-after absolute -right-5 top-1/2 -translate-y-1/2 z-20 opacity-0 group-hover:opacity-100 transition-opacity">
         <Button 
           size="icon" 
           variant="outline" 
@@ -154,12 +154,13 @@ export function PanelItem({
       </div>
 
       {/* Header bar */}
-      <div className="flex items-center justify-between p-2 border-b-4 border-border bg-muted/50">
+      <div className="flex items-center justify-between flex-wrap gap-2 p-2 border-b-4 border-border bg-muted/50">
         <div className="flex items-center gap-2">
           <div 
             {...attributes} 
             {...listeners}
-            className="cursor-grab active:cursor-grabbing p-1 hover:bg-border/10 rounded"
+            className="drag-handle cursor-grab active:cursor-grabbing p-1 hover:bg-border/10 rounded touch-none"
+            aria-label={`Drag panel ${index + 1} to reorder`}
           >
             <GripVertical className="w-5 h-5 text-muted-foreground" />
           </div>
@@ -168,7 +169,7 @@ export function PanelItem({
           </span>
         </div>
         
-        <div className="flex items-center gap-2">
+        <div className="panel-actions flex items-center gap-2 max-w-full overflow-x-auto">
           <div className="flex items-center gap-1 bg-background border-2 border-border px-2 py-1 brutal-shadow-sm">
             <Clock className="w-3 h-3 text-muted-foreground" />
             <input 
@@ -296,7 +297,7 @@ export function PanelItem({
         />
 
         {/* Controls bar — appears on hover */}
-        <div className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-2 p-2 opacity-0 group-hover/img:opacity-100 transition-opacity bg-gradient-to-t from-background/95 via-background/70 to-transparent">
+        <div className="panel-image-controls absolute inset-x-0 bottom-0 flex items-center justify-center gap-2 p-2 opacity-0 group-hover/img:opacity-100 transition-opacity bg-gradient-to-t from-background/95 via-background/70 to-transparent overflow-x-auto">
           <Button
             size="sm"
             variant="outline"

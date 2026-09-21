@@ -36,7 +36,8 @@ export function AudioTrackItem({ track, index }: { track: AudioTrack; index: num
           <div 
             {...attributes} 
             {...listeners}
-            className="cursor-grab active:cursor-grabbing hover:bg-muted p-1 -ml-1 rounded"
+            className="drag-handle cursor-grab active:cursor-grabbing hover:bg-muted p-1 -ml-1 rounded touch-none"
+            aria-label={`Drag audio track ${index + 1} to reorder`}
           >
             <GripVertical className="w-4 h-4 text-muted-foreground" />
           </div>
@@ -50,7 +51,7 @@ export function AudioTrackItem({ track, index }: { track: AudioTrack; index: num
         <Button 
           size="icon" 
           variant="ghost" 
-          className="h-6 w-6 text-muted-foreground hover:text-destructive hover:bg-destructive/10 -mr-1 -mt-1 shrink-0"
+          className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10 -mr-1 -mt-1 shrink-0"
           onClick={() => deleteTrack.mutate(track.id)}
         >
           <Trash2 className="w-3.5 h-3.5" />

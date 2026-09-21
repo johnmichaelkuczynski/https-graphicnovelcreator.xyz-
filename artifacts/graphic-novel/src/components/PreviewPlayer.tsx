@@ -111,8 +111,8 @@ export function PreviewPlayer({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black text-white flex flex-col">
-      <div className="flex-1 relative flex items-center justify-center p-8">
+    <div className="fixed inset-0 z-50 h-dvh bg-black text-white flex flex-col overflow-hidden">
+      <div className="flex-1 min-h-0 relative flex items-center justify-center p-3 sm:p-8">
         <AnimatePresence mode="wait">
           {activePanel && (
             <motion.div 
@@ -124,7 +124,7 @@ export function PreviewPlayer({ onClose }: { onClose: () => void }) {
               className="flex flex-col items-center max-w-4xl w-full h-full justify-center"
             >
               {activePanel.caption && (
-                <div className="mb-8 text-2xl md:text-4xl font-serif text-center max-w-2xl bg-black/50 p-4 rounded border-2 border-white/20">
+                <div className="mb-3 sm:mb-8 text-lg sm:text-2xl md:text-4xl font-serif text-center max-w-2xl max-h-[25vh] overflow-y-auto bg-black/50 p-3 sm:p-4 rounded border-2 border-white/20">
                   {activePanel.caption}
                 </div>
               )}
@@ -146,8 +146,8 @@ export function PreviewPlayer({ onClose }: { onClose: () => void }) {
         </AnimatePresence>
       </div>
 
-      <div className="h-24 border-t-2 border-white/20 bg-zinc-900 flex items-center justify-between px-8">
-        <div className="flex items-center gap-4">
+      <div className="min-h-20 sm:h-24 shrink-0 border-t-2 border-white/20 bg-zinc-900 flex items-center justify-between gap-3 px-3 sm:px-8 py-2">
+        <div className="flex items-center gap-2 sm:gap-4 min-w-0">
           <Button 
             size="icon" 
             variant="outline" 
@@ -163,15 +163,15 @@ export function PreviewPlayer({ onClose }: { onClose: () => void }) {
 
         <div className="flex items-center gap-4">
           {activeTrack && (
-            <div className="text-sm font-mono text-cyan-400 flex items-center gap-2">
+            <div className="hidden sm:flex text-sm font-mono text-cyan-400 items-center gap-2 min-w-0 max-w-64">
               <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
-              Playing: {activeTrack.name}
+              <span className="truncate">Playing: {activeTrack.name}</span>
             </div>
           )}
           <Button 
             variant="outline" 
             onClick={onClose}
-            className="border-2 border-white text-white hover:bg-red-500 hover:text-white hover:border-red-500 brutal-shadow brutal-shadow-hover ml-8"
+            className="border-2 border-white text-white hover:bg-red-500 hover:text-white hover:border-red-500 brutal-shadow brutal-shadow-hover sm:ml-8"
           >
             <X className="w-4 h-4 mr-2" /> Exit Preview
           </Button>

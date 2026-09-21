@@ -123,8 +123,61 @@
 
   body {
     @apply font-sans antialiased bg-background text-foreground;
+    min-width: 0;
+    overflow-x: hidden;
     /* Neo-brutalist texture / dot pattern could go here */
   }
+}
+
+/* Touch-only affordances. Desktop hover behavior and spacing stay unchanged. */
+@media (hover: none), (pointer: coarse) {
+  .brutal-shadow-hover:hover {
+    transform: none;
+    box-shadow: 4px 4px 0px 0px hsl(var(--foreground));
+  }
+
+  .panel-insert,
+  .panel-image-controls,
+  .tile-remove {
+    opacity: 1;
+  }
+
+  .panel-insert-before {
+    left: 0.5rem;
+  }
+
+  .panel-insert-after {
+    right: 0.5rem;
+  }
+
+  .panel-image-controls {
+    justify-content: flex-start;
+  }
+
+  .drag-handle {
+    min-width: 44px;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  button,
+  [role="button"],
+  input,
+  select {
+    min-height: 44px;
+  }
+
+  .tile-remove {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+.studio-action-bar {
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
 }
 
 .brutal-shadow {

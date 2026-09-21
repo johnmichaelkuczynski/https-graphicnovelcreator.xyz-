@@ -213,7 +213,7 @@ export default function Studio() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-background selection:bg-primary selection:text-primary-foreground">
+    <div className="h-dvh min-h-screen flex flex-col overflow-hidden bg-background selection:bg-primary selection:text-primary-foreground">
       {isPreviewing && <PreviewPlayer onClose={() => setIsPreviewing(false)} />}
 
       <ConvertDialog open={showConvert} onOpenChange={setShowConvert} />
@@ -302,8 +302,8 @@ export default function Studio() {
       )}
 
       {/* Top Navbar */}
-      <header className="sticky top-0 z-40 bg-background border-b-4 border-border px-6 py-4 flex items-center justify-between gap-4 shadow-sm flex-wrap">
-        <div className="flex items-center gap-4 min-w-0">
+      <header className="z-40 shrink-0 bg-background border-b-4 border-border px-3 sm:px-6 py-3 sm:py-4 flex items-center justify-between gap-3 sm:gap-4 shadow-sm flex-wrap">
+        <div className="flex items-center gap-3 sm:gap-4 min-w-0 w-full lg:w-auto">
           <BrandMark />
 
           {/* Project Switcher */}
@@ -311,7 +311,7 @@ export default function Studio() {
             <DropdownMenuTrigger asChild>
               <Button
                 variant="outline"
-                className="bg-card border-2 border-border brutal-shadow brutal-shadow-hover font-black uppercase tracking-tight max-w-[14rem]"
+                className="bg-card border-2 border-border brutal-shadow brutal-shadow-hover font-black uppercase tracking-tight min-w-0 max-w-[calc(100vw-8rem)] sm:max-w-[14rem]"
               >
                 <span className="truncate">{currentProject?.name ?? 'Project'}</span>
                 <ChevronDown className="w-4 h-4 ml-2 shrink-0" />
@@ -353,7 +353,7 @@ export default function Studio() {
           <Link href="/library">
             <Button
               variant="outline"
-              className="bg-card border-2 border-border brutal-shadow brutal-shadow-hover font-bold"
+              className="bg-card border-2 border-border brutal-shadow brutal-shadow-hover font-bold shrink-0"
               title="Your reusable images, documents and instructions"
             >
               <LibraryIcon className="w-4 h-4 mr-2" /> Library
@@ -361,7 +361,7 @@ export default function Studio() {
           </Link>
         </div>
 
-        <div className="flex items-center gap-3 flex-wrap">
+        <div className="studio-action-bar flex items-center gap-3 flex-nowrap overflow-x-auto overscroll-x-contain w-full lg:w-auto lg:flex-wrap lg:overflow-visible pb-2 lg:pb-0">
           <input type="file" multiple accept="image/*" className="hidden" ref={fileInputRef} onChange={handleBatchImages} />
           <input type="file" multiple accept={AUDIO_ACCEPT} className="hidden" ref={audioInputRef} onChange={handleBatchAudio} />
 
@@ -509,7 +509,7 @@ export default function Studio() {
       <main className="flex-1 flex overflow-hidden">
         {/* Storyboard Area (also a drop zone) */}
         <div
-          className="flex-1 overflow-y-auto p-8 relative"
+           className="flex-1 min-w-0 overflow-y-auto overscroll-contain p-4 sm:p-8 relative"
           onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
           onDragLeave={(e) => { if (e.currentTarget === e.target) setIsDragging(false); }}
           onDrop={(e) => {
@@ -546,6 +546,10 @@ export default function Studio() {
           ) : (
             <PanelGrid panels={panels} onAddImages={triggerAddImages} />
           )}
+
+          <div className="lg:hidden mt-8 border-4 border-border bg-card">
+            <AudioManager tracks={audioTracks} onAddAudio={triggerAddAudio} />
+          </div>
         </div>
 
         {/* Right Sidebar for Audio */}
