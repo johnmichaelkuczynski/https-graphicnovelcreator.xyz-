@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export * from './healthStatus';
-export * from './visitorCount';
-export * from './visitorSessionInput';
+export interface VisitorCount {
+  /** @minimum 1 */
+  total: number;
+}

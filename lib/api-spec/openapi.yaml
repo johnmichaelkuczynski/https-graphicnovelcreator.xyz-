@@ -10,6 +10,8 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: visitors
+    description: Anonymous aggregate visit counting
 paths:
   /healthz:
     get:
@@ -24,6 +26,25 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /visitors:
+    post:
+      operationId: recordVisitor
+      tags: [visitors]
+      summary: Record a browser session visit
+      description: Counts the supplied anonymous browser-session identifier once and returns only the shared aggregate.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VisitorSessionInput"
+      responses:
+        "200":
+          description: Current aggregate visit count
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VisitorCount"
 components:
   schemas:
     HealthStatus:
@@ -33,4 +54,22 @@ components:
           type: string
       required:
         - status
+    VisitorSessionInput:
+      type: object
+      additionalProperties: false
+      properties:
+        sessionId:
+          type: string
+          format: uuid
+      required:
+        - sessionId
+    VisitorCount:
+      type: object
+      additionalProperties: false
+      properties:
+        total:
+          type: integer
+          minimum: 1
+      required:
+        - total
 
