@@ -1,0 +1,11 @@
+# Graphic Novel Creator
+
+> Graphic Novel Creator is a browser-based studio for assembling graphic novels from your own images, captions, and audio. Create panels manually or turn source text into a graphic novel with AI, then play the result as a cinematic slideshow or export it as a PDF or video.
+
+## Canonical URL
+
+https://graphicnovelcreator.ink/
+
+## Public contact
+
+- https://zhisystems.org
