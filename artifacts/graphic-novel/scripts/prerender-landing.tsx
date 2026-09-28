@@ -1,11 +1,19 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import Landing from "../src/pages/Landing";
 
 const outputPath = new URL("../dist/public/index.html", import.meta.url);
 const html = await readFile(outputPath, "utf8");
-const landingMarkup = renderToStaticMarkup(<Landing />).replace(
+// Match the live app's query context. Effects do not run during static
+// rendering, so the visitor counter cannot record visits during the build.
+const queryClient = new QueryClient();
+const landingMarkup = renderToStaticMarkup(
+  <QueryClientProvider client={queryClient}>
+    <Landing />
+  </QueryClientProvider>,
+).replace(
   /<link rel="preload"[^>]*>/g,
   "",
 );
