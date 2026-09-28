@@ -13,6 +13,10 @@ import { toast } from '@/hooks/use-toast';
 import { downloadPanelImage } from '@/lib/export';
 import { SpeakControl } from './SpeakControl';
 import { LibraryImagePicker } from './LibraryImagePicker';
+import { NoirPanelImage } from './NoirPanelImage';
+import { useProjectContext } from '@/lib/project-context';
+import { downloadBlob } from '@/lib/export';
+import { renderNoirPanel } from '@/lib/noir-render';
 
 export function PanelItem({ 
   panel, 
@@ -26,6 +30,8 @@ export function PanelItem({
   onInsertAfter: () => void;
 }) {
   const savePanel = useSavePanel();
+  const { currentProject } = useProjectContext();
+  const isNoir = currentProject?.layout === 'film-noir';
   const deletePanel = useDeletePanel();
   
   const [isEditingCaption, setIsEditingCaption] = useState(false);
@@ -226,7 +232,12 @@ export function PanelItem({
             variant="ghost" 
             className="h-8 w-8 hover:bg-accent hover:text-accent-foreground text-muted-foreground"
             title="Download this panel as an image"
-            onClick={() => downloadPanelImage(panel, index)}
+            onClick={() => {
+              if (!isNoir) { downloadPanelImage(panel, index); return; }
+              renderNoirPanel(panel.imageBlob, panel.caption)
+                .then((blob) => downloadBlob(blob, `film-noir-panel-${index + 1}.png`))
+                .catch((err: unknown) => toast({ title: 'Cannot download panel', description: err instanceof Error ? err.message : String(err), variant: 'destructive' }));
+            }}
           >
             <Download className="w-4 h-4" />
           </Button>
@@ -273,12 +284,19 @@ export function PanelItem({
       </div>
 
       {/* Image area */}
-      <div className="relative aspect-[4/3] bg-muted overflow-hidden group/img">
-        <ImageCollage
+      {isNoir && images.length > 1 && (
+        <div role="status" className="p-2 bg-amber-100 text-amber-950 text-xs">
+          Film Noir pages use the first image only; {images.length - 1} additional image(s) remain saved but are not shown in page or video export.
+        </div>
+      )}
+      <div className={`relative ${isNoir ? 'aspect-[2/3]' : 'aspect-[4/3]'} bg-muted overflow-hidden group/img`}>
+        {isNoir ? (
+          <NoirPanelImage image={panel.imageBlob} caption={panel.caption} className="w-full h-full object-contain bg-black" />
+        ) : <ImageCollage
           blobs={images}
           className="w-full h-full"
           onRemove={images.length > 1 ? handleRemoveImage : undefined}
-        />
+        />}
 
         <input
           type="file"
@@ -307,7 +325,7 @@ export function PanelItem({
           >
             <ImageIcon className="w-4 h-4 mr-1" /> Replace
           </Button>
-          {images.length < MAX_PANEL_IMAGES && (
+          {!isNoir && images.length < MAX_PANEL_IMAGES && (
             <>
               <Button
                 size="sm"

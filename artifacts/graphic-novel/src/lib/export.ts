@@ -1,8 +1,9 @@
 import { jsPDF } from 'jspdf';
 import fixWebmDuration from 'fix-webm-duration';
 import { Muxer, ArrayBufferTarget } from 'webm-muxer';
-import { Panel, AudioTrack, getPanelImages } from './db';
+import { Panel, AudioTrack, Project, getPanelImages } from './db';
 import { collageRows } from './collage';
+import { renderNoirPanel } from './noir-render';
 
 export function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
@@ -169,8 +170,13 @@ export async function exportPdf(
   panels: Panel[],
   projectName: string,
   onProgress?: (fraction: number) => void,
+  project?: Project | null,
 ) {
   if (panels.length === 0) throw new Error('There are no panels to export. Add at least one panel first.');
+  if (project?.layout === 'film-noir') {
+    await exportNoirPdf(panels, projectName, project.pageTitle ?? '', onProgress);
+    return;
+  }
 
   const pdf = new jsPDF({ unit: 'pt', format: 'a4' });
   const pageW = pdf.internal.pageSize.getWidth();
@@ -238,6 +244,71 @@ export async function exportPdf(
   }
 
   pdf.save(`${safeName(projectName) || 'graphic-novel'}.pdf`);
+}
+
+// Full page image assembled from exactly the same app-lettered PNGs seen in the
+// studio and preview. Keep standard (one-panel-per-page) PDFs untouched.
+async function exportNoirPdf(panels: Panel[], name: string, title: string, onProgress?: (fraction: number) => void) {
+  const pdf = new jsPDF({ unit: 'pt', format: 'a4' });
+  const canvas = document.createElement('canvas');
+  canvas.width = 1200;
+  canvas.height = 1800;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Canvas page composition is unavailable in this browser.');
+  const pages = Math.ceil(panels.length / 4);
+  for (let page = 0; page < pages; page++) {
+    if (page) pdf.addPage();
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const titleHeight = title.trim() && page === 0 ? 120 : 0;
+    if (titleHeight) {
+      ctx.fillStyle = '#080808';
+      ctx.fillRect(16, 16, 1168, 108);
+      ctx.fillStyle = '#fff';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const words = title.trim().split(/\s+/);
+      let fit = false;
+      for (let font = 56; font >= 24; font--) {
+        ctx.font = `bold ${font}px Georgia, "Times New Roman", serif`;
+        const rows: string[] = [''];
+        for (const word of words) {
+          const last = rows.length - 1;
+          const next = rows[last] ? `${rows[last]} ${word}` : word;
+          if (ctx.measureText(next).width > 1080 && rows[last]) rows.push(word);
+          else rows[last] = next;
+        }
+        if (rows.length <= 2 && rows.every((row) => ctx.measureText(row).width <= 1080)) {
+          rows.forEach((row, i) => ctx.fillText(row, 600, rows.length === 1 ? 70 : 48 + i * 49));
+          fit = true;
+          break;
+        }
+      }
+      if (!fit) throw new Error('Film Noir title does not fit the page banner. Shorten the title and export again.');
+    }
+    const margin = 16, gap = 12;
+    const cellW = (1200 - 2 * margin - gap) / 2;
+    const cellH = (1800 - 2 * margin - gap - titleHeight) / 2;
+    for (let slot = 0; slot < 4; slot++) {
+      const index = page * 4 + slot;
+      if (index >= panels.length) break;
+      try {
+        const plate = await renderNoirPanel(panels[index].imageBlob, panels[index].caption);
+        const bitmap = await createImageBitmap(plate);
+        try {
+          ctx.drawImage(bitmap, margin + slot % 2 * (cellW + gap),
+            margin + titleHeight + Math.floor(slot / 2) * (cellH + gap), cellW, cellH);
+        } finally { bitmap.close(); }
+      } catch (err) {
+        throw new Error(`Film Noir panel ${index + 1} could not be lettered: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      onProgress?.((index + 1) / panels.length);
+    }
+    pdf.addImage(canvas.toDataURL('image/jpeg', 0.88), 'JPEG', 0, 0,
+      pdf.internal.pageSize.getWidth(), pdf.internal.pageSize.getHeight());
+    await nextFrame();
+  }
+  pdf.save(`${safeName(name) || 'film-noir'}.pdf`);
 }
 
 function drawPanelFrame(
@@ -756,8 +827,18 @@ export async function exportVideo(
   tracks: AudioTrack[],
   projectName: string,
   onProgress?: (fraction: number) => void,
+  project?: Project | null,
 ): Promise<void> {
   if (panels.length === 0) return;
-  const { blob, ext } = await renderVideoBlob(panels, tracks, onProgress);
+  const videoPanels = project?.layout === 'film-noir'
+    ? await Promise.all(panels.map(async (p, i) => {
+        try {
+          return { ...p, imageBlob: await renderNoirPanel(p.imageBlob, p.caption), extraImages: [], caption: '' };
+        } catch (err) {
+          throw new Error(`Film Noir panel ${i + 1} cannot be lettered for video: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }))
+    : panels;
+  const { blob, ext } = await renderVideoBlob(videoPanels, tracks, onProgress);
   downloadBlob(blob, `${safeName(projectName) || 'graphic-novel'}.${ext}`);
 }

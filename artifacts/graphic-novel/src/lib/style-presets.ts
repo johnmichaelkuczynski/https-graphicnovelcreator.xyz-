@@ -62,6 +62,14 @@ export const STYLE_PRESETS: StylePreset[] = [
     image: { width: 1024, height: 1024, steps: 25 },
   },
   {
+    id: 'film-noir',
+    label: 'Film Noir — cinematic pages',
+    hint: 'Photoreal black-and-white film stills, app-rendered speech balloons, and four portrait panels per PDF page.',
+    prompt:
+      'photorealistic 1940s film noir black and white still photograph, portrait framing, realistic expressive human faces, deep chiaroscuro, hard light through venetian blinds, wet rain-streaked windows, rich silver gelatin grain, deep blacks and luminous whites, cinematic composition with faces and important action in the lower two-thirds, uncluttered dark upper third reserved for later lettering',
+    image: { width: 768, height: 1024, steps: 25 },
+  },
+  {
     id: 'pixel',
     label: 'Retro Pixel Art',
     hint: '16-bit video game look.',

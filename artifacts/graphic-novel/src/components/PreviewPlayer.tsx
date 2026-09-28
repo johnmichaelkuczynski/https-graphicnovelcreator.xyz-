@@ -5,10 +5,14 @@ import { BlobImage, ImageCollage } from './BlobMedia';
 import { Button } from '@/components/ui/button';
 import { X, Play, Pause, SkipForward } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useProjectContext } from '@/lib/project-context';
+import { NoirPanelImage } from './NoirPanelImage';
 
 export function PreviewPlayer({ onClose }: { onClose: () => void }) {
   const { data: panels = [] } = usePanels();
   const { data: audioTracks = [] } = useAudioTracks();
+  const { currentProject } = useProjectContext();
+  const isNoir = currentProject?.layout === 'film-noir';
   
   const [currentPanelIndex, setCurrentPanelIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -123,12 +127,25 @@ export function PreviewPlayer({ onClose }: { onClose: () => void }) {
               transition={{ duration: 0.5 }}
               className="flex flex-col items-center max-w-4xl w-full h-full justify-center"
             >
-              {activePanel.caption && (
+               {!isNoir && activePanel.caption && (
                 <div className="mb-3 sm:mb-8 text-lg sm:text-2xl md:text-4xl font-serif text-center max-w-2xl max-h-[25vh] overflow-y-auto bg-black/50 p-3 sm:p-4 rounded border-2 border-white/20">
                   {activePanel.caption}
                 </div>
               )}
-              <div className="relative w-full max-h-[70vh] flex justify-center">
+               {isNoir ? (
+                 <div className="w-full max-w-[530px] max-h-[75vh] overflow-y-auto bg-white text-black p-1.5">
+                   {currentProject?.pageTitle && currentPanelIndex < 4 && (
+                     <h2 className="bg-black text-white font-serif font-bold text-center uppercase tracking-wider text-sm sm:text-xl py-1 mb-1.5">
+                       {currentProject.pageTitle}
+                     </h2>
+                   )}
+                   <div className="grid grid-cols-2 gap-1.5">
+                     {panels.slice(Math.floor(currentPanelIndex / 4) * 4, Math.floor(currentPanelIndex / 4) * 4 + 4).map((p) => (
+                       <NoirPanelImage key={p.id} image={p.imageBlob} caption={p.caption} className="w-full aspect-[2/3] object-cover" />
+                     ))}
+                   </div>
+                 </div>
+               ) : <div className="relative w-full max-h-[70vh] flex justify-center">
                 {activeImages.length <= 1 ? (
                   <BlobImage
                     blob={activePanel.imageBlob}
@@ -140,7 +157,7 @@ export function PreviewPlayer({ onClose }: { onClose: () => void }) {
                     className="w-full max-w-3xl aspect-[4/3] max-h-[70vh] border-4 border-white brutal-shadow"
                   />
                 )}
-              </div>
+               </div>}
             </motion.div>
           )}
         </AnimatePresence>
@@ -157,7 +174,7 @@ export function PreviewPlayer({ onClose }: { onClose: () => void }) {
             {isPlaying ? <Pause className="w-6 h-6" /> : <Play className="w-6 h-6 ml-1" />}
           </Button>
           <div className="text-sm font-mono opacity-50">
-            Panel {currentPanelIndex + 1} of {panels.length}
+             {isNoir ? `Page ${Math.floor(currentPanelIndex / 4) + 1} of ${Math.ceil(panels.length / 4)} · Panel ${currentPanelIndex + 1}/${panels.length}` : `Panel ${currentPanelIndex + 1} of ${panels.length}`}
           </div>
         </div>
 

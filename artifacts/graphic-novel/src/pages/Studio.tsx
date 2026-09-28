@@ -177,7 +177,7 @@ export default function Studio() {
     try {
       await exportPdf(panels, currentProject?.name ?? 'graphic-novel', (f) => {
         setExportStatus(`Building PDF... ${Math.round(f * 100)}%`);
-      });
+      }, currentProject);
       toast.success('PDF downloaded.');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not build the PDF.');
@@ -192,7 +192,7 @@ export default function Studio() {
     try {
       await exportVideo(panels, audioTracks, currentProject?.name ?? 'graphic-novel', (f) => {
         setExportStatus(`Rendering video... ${Math.round(f * 100)}%`);
-      });
+      }, currentProject);
       toast.success('Video downloaded.');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not render the video.');

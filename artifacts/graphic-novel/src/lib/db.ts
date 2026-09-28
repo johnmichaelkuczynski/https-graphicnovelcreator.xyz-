@@ -5,6 +5,8 @@ export interface Project {
   name: string;
   createdAt: number;
   updatedAt: number;
+  layout?: 'film-noir';
+  pageTitle?: string;
 }
 
 // A panel shows 1 image by default. Users may add up to MAX_PANEL_IMAGES total.
@@ -203,6 +205,7 @@ export const dbApi = {
     name: string,
     panels: { imageBlob: Blob; caption: string; durationSeconds: number }[],
     audio?: { audioBlob: Blob; name: string },
+    page?: { layout: 'film-noir'; pageTitle?: string },
   ): Promise<Project> {
     if (!panels.length) throw new Error('There are no generated panels to save.');
     const db = await getDB();
@@ -212,6 +215,7 @@ export const dbApi = {
       name: name.trim() || 'Untitled Project',
       createdAt: now,
       updatedAt: now,
+      ...page,
     };
     const tx = db.transaction(['projects', 'panels', 'audio_tracks'], 'readwrite');
     try {

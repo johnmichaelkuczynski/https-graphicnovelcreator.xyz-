@@ -43,6 +43,7 @@ export function ConvertDialog({
   const [sourceText, setSourceText] = useState('');
   const [outputSpec, setOutputSpec] = useState('');
   const [styleId, setStyleId] = useState('stick');
+  const [pageTitle, setPageTitle] = useState('');
   const [mode, setMode] = useState<GenerationMode>('standard');
   const [customStyle, setCustomStyle] = useState('');
   const [panelCount, setPanelCount] = useState(6);
@@ -164,6 +165,7 @@ export function ConvertDialog({
       partial ? `${name} (unfinished)` : name,
       panels.map((p) => ({ imageBlob: p.imageBlob, caption: p.caption, durationSeconds: duration })),
       audioFile ? { audioBlob: audioFile, name: audioFile.name } : undefined,
+      styleId === 'film-noir' ? { layout: 'film-noir', pageTitle: pageTitle.trim() } : undefined,
     );
     await Promise.all([
       qc.invalidateQueries({ queryKey: ['projects'] }),
@@ -175,6 +177,7 @@ export function ConvertDialog({
     onOpenChange(false);
     setSourceText('');
     setOutputSpec('');
+    setPageTitle('');
     setAudioFile(null);
     setUploadedName(null);
   };
@@ -457,6 +460,14 @@ export function ConvertDialog({
               ))}
             </div>
             <p className="text-xs text-muted-foreground">{style.hint}</p>
+            {styleId === 'film-noir' && (
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="noir-title" className="font-black uppercase text-xs">Optional first-page title banner</Label>
+                <Input id="noir-title" value={pageTitle} onChange={(e) => setPageTitle(e.target.value)}
+                  placeholder="e.g. A Dialogue Concerning OCD" disabled={busy} maxLength={120} />
+                <p className="text-xs text-muted-foreground">Dialogue is drawn by the app, not the image model. Four portrait panels make each page; choose more panels if your dialogue is long.</p>
+              </div>
+            )}
             {styleId === 'custom' && (
               <Textarea
                 value={customStyle}
