@@ -36,9 +36,9 @@ function environment(values) {
     else process.env[key] = values[key];
   }
 }
-function request(host, authenticated = false, email = null) {
+function request(host, authenticated = false, email = null, forwardedHost) {
   return {
-    get: (key) => key === "host" ? host : undefined,
+    get: (key) => key === "host" ? host : key === "x-forwarded-host" ? forwardedHost : undefined,
     isAuthenticated: () => authenticated,
     user: authenticated ? { email } : undefined,
   };
@@ -60,38 +60,51 @@ after(() => {
   }
 });
 
-  test("development preview opens AI gate without an account, never admin", () => {
-    environment({ NODE_ENV: "development", REPLIT_DEV_DOMAIN: "preview.example.test" });
-    const req = request("preview.example.test");
-    assert.deepEqual(developmentPreviewUser(req), {
-      id: -1, username: "development-preview", email: null,
-      displayName: "Development preview", devPreview: true,
-    });
-    assert.equal(outcome(isAuthenticated, req), "next");
-    assert.equal(outcome(isAdmin, req), 403);
-  });
-
-  test("production and deployments cannot bypass with a preview host", () => {
-    for (const values of [
-      { NODE_ENV: "production", REPLIT_DEV_DOMAIN: "preview.example.test" },
-      { NODE_ENV: "development", REPLIT_DEV_DOMAIN: "preview.example.test", REPLIT_DEPLOYMENT: "1" },
-      { NODE_ENV: "development" },
-      { NODE_ENV: "development", REPLIT_DEV_DOMAIN: "preview.example.test" },
+test("development preview opens AI gate from embedded, local, and forwarded hosts, never admin", () => {
+  for (const values of [
+    { NODE_ENV: "development", REPLIT_DEV_DOMAIN: "preview.example.test" },
+    { NODE_ENV: "development" },
+  ]) {
+    environment(values);
+    for (const req of [
+      request("preview.example.test"),
+      request("localhost:80"),
+      request("embedded.proxy.test", false, null, "localhost:80"),
+      request("production.example.test"),
     ]) {
-      environment(values);
-      const req = request(values.REPLIT_DEV_DOMAIN ? (
-        values.NODE_ENV === "development" && values.REPLIT_DEPLOYMENT !== "1"
-          ? "production.example.test" : "preview.example.test"
-      ) : "preview.example.test");
-      assert.equal(developmentPreviewUser(req), null);
+      assert.deepEqual(developmentPreviewUser(), {
+        id: -1, username: "development-preview", email: null,
+        displayName: "Development preview", devPreview: true,
+      });
+      assert.equal(outcome(isAuthenticated, req), "next");
+      assert.equal(outcome(isAdmin, req), 403);
+    }
+  }
+});
+
+test("production, deployments, and unset environment deny anonymous requests on every host", () => {
+  for (const values of [
+    { NODE_ENV: "production", REPLIT_DEV_DOMAIN: "preview.example.test" },
+    { NODE_ENV: "development", REPLIT_DEV_DOMAIN: "preview.example.test", REPLIT_DEPLOYMENT: "1" },
+    { NODE_ENV: "test", REPLIT_DEV_DOMAIN: "preview.example.test" },
+    { REPLIT_DEV_DOMAIN: "preview.example.test" },
+  ]) {
+    environment(values);
+    for (const req of [
+      request("preview.example.test"),
+      request("localhost:80"),
+      request("other.example.test", false, null, "preview.example.test"),
+    ]) {
+      assert.equal(developmentPreviewUser(), null);
       assert.equal(outcome(isAuthenticated, req), 401);
       assert.equal(outcome(isAdmin, req), 403);
     }
-  });
+  }
+});
 
-  test("real Google sessions retain existing authorization", () => {
-    environment({ NODE_ENV: "production", REPLIT_DEV_DOMAIN: "preview.example.test" });
-    assert.equal(outcome(isAuthenticated, request("production.example.test", true)), "next");
-    assert.equal(outcome(isAdmin, request("production.example.test", true, "other@example.test")), 403);
-    assert.equal(outcome(isAdmin, request("production.example.test", true, "johnmichaelkuczynski@gmail.com")), "next");
-  });
+test("real Google sessions retain existing authorization", () => {
+  environment({ NODE_ENV: "production", REPLIT_DEV_DOMAIN: "preview.example.test" });
+  assert.equal(outcome(isAuthenticated, request("production.example.test", true)), "next");
+  assert.equal(outcome(isAdmin, request("production.example.test", true, "other@example.test")), 403);
+  assert.equal(outcome(isAdmin, request("production.example.test", true, "johnmichaelkuczynski@gmail.com")), "next");
+});

@@ -22,7 +22,7 @@ import Landing from "@/pages/Landing";
 import Administrative from "@/pages/Administrative";
 import { ProjectProvider, STORAGE_KEY } from "@/lib/project-context";
 import { dbApi } from "@/lib/db";
-import { useAuth } from "@/hooks/use-auth";
+import { developmentPreview, useAuth } from "@/hooks/use-auth";
 
 const queryClient = new QueryClient();
 
@@ -39,7 +39,10 @@ function AuthDataGuard() {
   const qc = useQueryClient();
 
   useEffect(() => {
-    if (isLoading) return;
+    // A development preview may render before /auth/me resolves (or after a
+    // cached 401). Never erase browser projects because its synthetic
+    // principal temporarily replaces a real account.
+    if (developmentPreview || isLoading) return;
     const userId = user ? String(user.id) : null;
     const previous = localStorage.getItem(LAST_USER_KEY);
 
@@ -76,6 +79,17 @@ function FullScreenLoader() {
 function AppRoutes() {
   const { isSignedIn, isAdmin, isLoading } = useAuth();
   const [location] = useLocation();
+
+  // Non-API legacy auth URLs can be served by Vite's SPA fallback rather
+  // than the API proxy. Bring development visitors straight into Studio.
+  if (developmentPreview && (
+    location === "/auth/google" ||
+    location === "/auth/google/callback" ||
+    location === "/sign-in" ||
+    location === "/sign-up"
+  )) {
+    return <Redirect to="/" replace />;
+  }
 
   // Keep the pre-rendered root landing markup stable while the auth query
   // resolves. This lets hydrateRoot attach the sign-in handlers immediately;

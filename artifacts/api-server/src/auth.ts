@@ -6,19 +6,14 @@ import type { Express, RequestHandler } from "express";
 import { storage } from "./storage";
 import pg from "pg";
 
-// Preview access never creates a database user or a Passport session. It is
-// available only in the development process on its configured preview domain,
-// never on deployments (even if a host header is forged).
-export function developmentPreviewUser(req: { get(name: string): string | undefined }) {
-  const domain = process.env.REPLIT_DEV_DOMAIN?.trim().toLowerCase();
-  const host = (req.get("x-forwarded-host") || req.get("host") || "")
-    .split(",")[0].trim().toLowerCase();
-  if (
-    process.env.NODE_ENV !== "development" ||
-    process.env.REPLIT_DEPLOYMENT === "1" ||
-    !domain ||
-    host !== domain
-  ) return null;
+// Preview access never creates a database user or a Passport session. This
+// depends on the process environment, not the proxy's mutable Host headers.
+export function isDevelopmentPreview() {
+  return process.env.NODE_ENV === "development" && process.env.REPLIT_DEPLOYMENT !== "1";
+}
+
+export function developmentPreviewUser() {
+  if (!isDevelopmentPreview()) return null;
   return { id: -1, username: "development-preview", email: null, displayName: "Development preview", devPreview: true };
 }
 
@@ -127,8 +122,15 @@ export function setupAuth(app: Express) {
     }
   });
 
-  // --- Google OAuth 2.0 (optional login: the app itself is fully open) ---
-  if (googleEnabled) {
+  // Old sign-in URLs must not send development visitors to an OAuth consent
+  // screen (which cannot authorize embedded preview hosts).
+  if (isDevelopmentPreview()) {
+    app.get(["/api/auth/google", "/auth/google", "/api/auth/google/callback", "/auth/google/callback"],
+      (_req, res) => res.redirect("/"));
+  }
+
+  // --- Google OAuth 2.0 (production login) ---
+  if (googleEnabled && !isDevelopmentPreview()) {
     // Callback path is /api/auth/google/callback — this app's API server only
     // receives traffic under /api through the shared reverse proxy, so the
     // registered redirect URIs in Google Cloud Console must use this path.
@@ -281,7 +283,7 @@ export function setupAuth(app: Express) {
         },
       });
     } else {
-      const preview = developmentPreviewUser(req);
+      const preview = developmentPreviewUser();
       res.json({ authenticated: !!preview, user: preview });
     }
   });
@@ -295,7 +297,7 @@ export function setupAuth(app: Express) {
         displayName: req.user.displayName,
       });
     } else {
-      const preview = developmentPreviewUser(req);
+      const preview = developmentPreviewUser();
       if (preview) {
         res.json(preview);
         return;
@@ -400,7 +402,7 @@ export const isAdmin: RequestHandler = (req, res, next) => {
 };
 
 export const isAuthenticated: RequestHandler = (req, res, next) => {
-  if (req.isAuthenticated() || developmentPreviewUser(req)) {
+  if (req.isAuthenticated() || developmentPreviewUser()) {
     return next();
   }
   res.status(401).json({ error: "Not authenticated" });

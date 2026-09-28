@@ -4,7 +4,7 @@ import { isAuthenticated } from "../auth";
 
 const router: IRouter = Router();
 
-// Every AI route requires a signed-in session.
+// Production requires a session; development preview uses a non-admin principal.
 router.use(isAuthenticated);
 
 const messageSchema = z.object({

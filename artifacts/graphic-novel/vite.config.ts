@@ -26,8 +26,16 @@ if (!basePath) {
   );
 }
 
-export default defineConfig({
+export default defineConfig(async ({ command, mode }) => ({
   base: basePath,
+  // Compile this only into the local dev server. Production builds retain
+  // the original auth/landing flow even if the build environment is unusual.
+  define: {
+    __DEVELOPMENT_PREVIEW__: JSON.stringify(
+      command === "serve" && mode === "development" &&
+      process.env.REPLIT_DEPLOYMENT !== "1",
+    ),
+  },
   plugins: [
     react(),
     tailwindcss({ optimize: false }),
@@ -72,4 +80,4 @@ export default defineConfig({
     host: "0.0.0.0",
     allowedHosts: true,
   },
-});
+}));
