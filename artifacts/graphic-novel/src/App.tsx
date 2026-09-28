@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import {
   Switch,
   Route,
@@ -20,8 +20,8 @@ import Studio from "@/pages/Studio";
 import Library from "@/pages/Library";
 import Landing from "@/pages/Landing";
 import Administrative from "@/pages/Administrative";
-import { ProjectProvider, STORAGE_KEY } from "@/lib/project-context";
-import { dbApi } from "@/lib/db";
+import { ProjectProvider } from "@/lib/project-context";
+import { getProjectSelectionKey, migrateLegacyData, selectDataScope } from "@/lib/db";
 import { developmentPreview, useAuth } from "@/hooks/use-auth";
 
 const queryClient = new QueryClient();
@@ -29,43 +29,53 @@ const queryClient = new QueryClient();
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 const privateRoutes = new Set(["/library", "/admin"]);
 
-// Remember which account last used this browser so we can wipe locally stored
-// novels whenever a different account (or a signed-out state) is detected —
-// one person's browser must never surface another person's content.
+// Only the recorded owner may import the old unscoped database. Unknown-owner
+// data is kept intact but never presented to a production account.
 const LAST_USER_KEY = "gnc:last-user-id";
 
-function AuthDataGuard() {
+function AuthDataGuard({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
   const qc = useQueryClient();
+  const [readyFor, setReadyFor] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const principal = developmentPreview ? "preview" : user ? String(user.id) : null;
 
   useEffect(() => {
-    // A development preview may render before /auth/me resolves (or after a
-    // cached 401). Never erase browser projects because its synthetic
-    // principal temporarily replaces a real account.
-    if (developmentPreview || isLoading) return;
-    const userId = user ? String(user.id) : null;
-    const previous = localStorage.getItem(LAST_USER_KEY);
-
-    const wipeLocalData = () => {
-      localStorage.removeItem(STORAGE_KEY);
-      void dbApi.clearAllData().finally(() => qc.clear());
-    };
-
-    if (userId === null) {
-      if (previous !== null) {
-        wipeLocalData();
-        localStorage.removeItem(LAST_USER_KEY);
+    if (isLoading || !principal) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        if (readyFor && readyFor !== principal) qc.clear();
+        if (!developmentPreview) {
+          const previous = localStorage.getItem(LAST_USER_KEY);
+          const migratedKey = `gnc:legacy-imported:${principal}`;
+          if (previous === principal && !localStorage.getItem(migratedKey)) {
+            await migrateLegacyData(principal);
+            localStorage.setItem(migratedKey, "1");
+            const legacySelection = localStorage.getItem('novel-current-project-id');
+            if (legacySelection) localStorage.setItem(getProjectSelectionKey(principal), legacySelection);
+          }
+          localStorage.setItem(LAST_USER_KEY, principal);
+        }
+        if (!cancelled) {
+          selectDataScope(principal, developmentPreview);
+          setReadyFor(principal);
+          setError(null);
+        }
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Could not prepare local project storage.');
       }
-      return;
-    }
+    })();
+    return () => { cancelled = true; };
+  }, [principal, isLoading, qc]);
 
-    if (previous !== userId) {
-      wipeLocalData();
-    }
-    localStorage.setItem(LAST_USER_KEY, userId);
-  }, [user, isLoading, qc]);
-
-  return null;
+  if (error) return <div role="alert" className="p-8">Could not open your projects: {error}. Your local data was not deleted. Reload to retry.</div>;
+  if (!principal || isLoading || readyFor !== principal) {
+    // Signed-out landing must not mount ProjectProvider (and access another
+    // account's data); private routes are handled by AppRoutes below.
+    return principal ? <FullScreenLoader /> : <AppRoutes />;
+  }
+  return <>{children}</>;
 }
 
 function FullScreenLoader() {
@@ -126,11 +136,12 @@ function App() {
   return (
     <WouterRouter base={basePath}>
       <QueryClientProvider client={queryClient}>
-        <AuthDataGuard />
         <TooltipProvider>
-          <ProjectProvider>
-            <AppRoutes />
-          </ProjectProvider>
+          <AuthDataGuard>
+            <ProjectProvider key={developmentPreview ? "preview" : "account"}>
+              <AppRoutes />
+            </ProjectProvider>
+          </AuthDataGuard>
           <Toaster />
           <SonnerToaster />
         </TooltipProvider>

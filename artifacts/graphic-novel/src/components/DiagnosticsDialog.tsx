@@ -1,10 +1,9 @@
-import { useState } from 'react';
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
-} from '@/components/ui/dialog';
+import { useEffect, useRef, useState } from 'react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { runDiagnostics, DiagnosticScenarioResult } from '@/lib/diagnostics';
-import { Loader2, CheckCircle2, XCircle, Activity } from 'lucide-react';
+import { Activity, CheckCircle2, XCircle, Loader2, Download, Square, AlertTriangle } from 'lucide-react';
+import { CREDIT_NOTICE, runFullDiagnostics, type Report } from '@/lib/diagnostics-suite';
+import { downloadBlob } from '@/lib/export';
 
 interface Props {
   open: boolean;
@@ -12,117 +11,101 @@ interface Props {
 }
 
 export function DiagnosticsDialog({ open, onOpenChange }: Props) {
+  const controller = useRef<AbortController | null>(null);
+  const startedForOpen = useRef(false);
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState('');
   const [fraction, setFraction] = useState(0);
-  const [results, setResults] = useState<DiagnosticScenarioResult[] | null>(null);
+  const [report, setReport] = useState<Report | null>(null);
 
   const run = async () => {
+    if (controller.current) return;
+    const abort = new AbortController();
+    controller.current = abort;
     setRunning(true);
-    setResults(null);
+    setReport(null);
     setMessage('Starting…');
     setFraction(0);
     try {
-      const r = await runDiagnostics((msg, f) => {
-        setMessage(msg);
-        setFraction(f);
+      await runFullDiagnostics(abort, (next, current, progress) => {
+        setReport(next);
+        setMessage(current);
+        setFraction(progress);
       });
-      setResults(r);
-    } catch (e) {
-      setResults([
-        {
-          name: 'Diagnostic harness',
-          ok: false,
-          steps: [{ label: 'Crashed', ok: false, detail: e instanceof Error ? e.message : String(e) }],
-        },
-      ]);
+    } catch {
+      setReport(previous => ({
+        startedAt: previous?.startedAt ?? new Date().toISOString(),
+        finishedAt: new Date().toISOString(),
+        verdict: 'not fully verified',
+        checks: [...(previous?.checks ?? []), { name: 'Diagnostics harness', status: 'fail', evidence: 'Unexpected harness error; check browser developer tools.' }],
+      }));
     } finally {
+      controller.current = null;
       setRunning(false);
     }
   };
 
-  const allPass = results !== null && results.every((r) => r.ok);
+  useEffect(() => {
+    if (open && !startedForOpen.current) {
+      startedForOpen.current = true;
+      void run();
+    }
+    if (!open) {
+      startedForOpen.current = false;
+      controller.current?.abort();
+    }
+    // Opening from the toolbar is the single action that starts this suite.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="border-2 border-border max-w-2xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="font-black uppercase flex items-center gap-2">
-            <Activity className="w-5 h-5" /> Export Self-Test
+            <Activity className="w-5 h-5" /> App Diagnostics
           </DialogTitle>
           <DialogDescription>
-            Synthetically builds several graphic novels (1, 3, 8 and 24 panels, with and without
-            audio), renders each one to video, then decodes the result to confirm the duration is
-            right and every single panel is present — no freezing, no truncation.
+            One click runs the inventory below. Tests use isolated local fixtures and clean up only their own records. Existing projects and your selection remain untouched. Results distinguish live checks from manual/unverified coverage; no universal pass is claimed.
           </DialogDescription>
         </DialogHeader>
-
-        <Button
-          onClick={run}
-          disabled={running}
-          className="border-2 border-border brutal-shadow brutal-shadow-hover font-black uppercase"
-        >
-          {running ? (
-            <>
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Running…
-            </>
-          ) : (
-            'Run Diagnostics'
-          )}
-        </Button>
-
-        {running && (
-          <div className="space-y-2">
-            <div className="text-sm font-mono">
-              {message} ({Math.round(fraction * 100)}%)
-            </div>
-            <div className="h-2 w-full border-2 border-border bg-card">
-              <div
-                className="h-full bg-primary transition-all"
-                style={{ width: `${Math.round(fraction * 100)}%` }}
-              />
-            </div>
+        <p className="text-sm border-2 border-amber-500 bg-amber-50 text-amber-950 p-3 font-medium" role="note">
+          <AlertTriangle className="inline w-4 h-4 mr-1" /> {CREDIT_NOTICE}
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={run} disabled={running} className="border-2 border-border brutal-shadow brutal-shadow-hover font-black uppercase">
+            {running ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Running…</> : 'Run Complete Diagnostics'}
+          </Button>
+          {running && <Button variant="outline" onClick={() => controller.current?.abort()}><Square className="w-4 h-4 mr-2" /> Cancel</Button>}
+          {report && <Button variant="outline" onClick={() => downloadBlob(new Blob([JSON.stringify({
+            schema: 'app-diagnostics-v1',
+            ...report,
+            notice: CREDIT_NOTICE,
+            scope: 'Current browser and signed-in session only. No private data, provider content, tokens, or user project contents collected.',
+          }, null, 2)], { type: 'application/json' }), `diagnostics-${Date.now()}.json`)}>
+            <Download className="w-4 h-4 mr-2" /> Download sanitized report
+          </Button>}
+        </div>
+        {running && <div className="space-y-2" aria-live="polite">
+          <div className="text-sm font-mono">{message} ({Math.round(fraction * 100)}%)</div>
+          <div className="h-2 w-full border-2 border-border bg-card"><div className="h-full bg-primary transition-all" style={{ width: `${Math.round(fraction * 100)}%` }} /></div>
+        </div>}
+        {report && <div className="space-y-3">
+          <div className={`font-black uppercase text-lg ${report.verdict === 'verified' ? 'text-green-600' : 'text-destructive'}`}>
+            {running ? 'Checks in progress — not yet verified' : report.verdict === 'verified' ? '✓ All listed checks verified' : 'Not fully verified — see coverage below'}
           </div>
-        )}
-
-        {results && (
-          <div className="space-y-3">
-            <div
-              className={`font-black uppercase text-lg ${
-                allPass ? 'text-green-600' : 'text-destructive'
-              }`}
-            >
-              {allPass ? '✓ All tests passed' : '✕ Failures detected'}
-            </div>
-            {results.map((r, i) => (
-              <div key={i} className="border-2 border-border p-3 brutal-shadow">
-                <div className="flex items-center gap-2 font-bold">
-                  {r.ok ? (
-                    <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0" />
-                  ) : (
-                    <XCircle className="w-4 h-4 text-destructive shrink-0" />
-                  )}
-                  {r.name}
-                </div>
-                <ul className="mt-2 space-y-1 text-sm">
-                  {r.steps.map((s, j) => (
-                    <li key={j} className="flex items-start gap-2">
-                      {s.ok ? (
-                        <CheckCircle2 className="w-3.5 h-3.5 text-green-600 mt-0.5 shrink-0" />
-                      ) : (
-                        <XCircle className="w-3.5 h-3.5 text-destructive mt-0.5 shrink-0" />
-                      )}
-                      <span>
-                        <span className="font-medium">{s.label}</span>{' '}
-                        <span className="text-muted-foreground">— {s.detail}</span>
-                      </span>
-                    </li>
-                  ))}
-                </ul>
+          <p className="text-xs text-muted-foreground">Pass = executed check; Capability = configuration only; Manual = not exercised; Blocked = could not run; Fail = check failed. Timings include browser and provider request time. A pass here is not proof that every app function works.</p>
+          <ul className="space-y-2" aria-live="polite">{report.checks.map((check, i) =>
+            <li key={`${check.name}-${i}`} className="border-2 border-border p-3">
+              <div className="flex gap-2 items-center font-bold">
+                {check.status === 'pass' ? <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0" /> : <XCircle className="w-4 h-4 text-destructive shrink-0" />}
+                <span>{check.name}</span>
+                <span className="ml-auto text-xs uppercase">{check.status}</span>
               </div>
-            ))}
-          </div>
-        )}
+              <div className="text-xs text-muted-foreground mt-1 break-words">{check.evidence}{check.ms !== undefined ? ` · ${check.ms} ms` : ''}</div>
+            </li>,
+          )}</ul>
+        </div>}
       </DialogContent>
     </Dialog>
   );

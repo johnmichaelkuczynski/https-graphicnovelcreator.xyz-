@@ -5,7 +5,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { ImageCollage } from './BlobMedia';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Trash2, GripVertical, Image as ImageIcon, Plus, Clock, Download, Music, X, Upload, Library } from 'lucide-react';
+import { Trash2, GripVertical, Image as ImageIcon, Plus, Clock, Download, Music, X, Upload, Library, Sparkles } from 'lucide-react';
 import { useSavePanel, useDeletePanel } from '@/hooks/use-novel';
 import { Textarea } from '@/components/ui/textarea';
 import { validateAudioFile, AUDIO_ACCEPT } from '@/lib/audio-validate';
@@ -17,6 +17,7 @@ import { NoirPanelImage } from './NoirPanelImage';
 import { useProjectContext } from '@/lib/project-context';
 import { downloadBlob } from '@/lib/export';
 import { renderNoirPanel } from '@/lib/noir-render';
+import { PhotoCartoonDialog } from './PhotoCartoonDialog';
 
 export function PanelItem({ 
   panel, 
@@ -39,6 +40,8 @@ export function PanelItem({
   const [duration, setDuration] = useState(panel.durationSeconds.toString());
   
   const [showLibraryPicker, setShowLibraryPicker] = useState(false);
+  const [showCartoon, setShowCartoon] = useState(false);
+  const [cartoonSourceIndex, setCartoonSourceIndex] = useState(0);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const addInputRef = useRef<HTMLInputElement>(null);
@@ -316,6 +319,12 @@ export function PanelItem({
 
         {/* Controls bar — appears on hover */}
         <div className="panel-image-controls absolute inset-x-0 bottom-0 flex items-center justify-center gap-2 p-2 opacity-0 group-hover/img:opacity-100 transition-opacity bg-gradient-to-t from-background/95 via-background/70 to-transparent overflow-x-auto">
+          <Button size="sm" variant="outline" className="border-2 border-border bg-background brutal-shadow-sm font-bold" onClick={() => setShowCartoon(true)}>
+            <Sparkles className="w-4 h-4 mr-1" /> Photo to Cartoon
+          </Button>
+          {images.length > 1 && <select aria-label="Choose panel photo to cartoonize" value={cartoonSourceIndex} onChange={e => setCartoonSourceIndex(Number(e.target.value))} className="border-2 border-border bg-background text-xs font-bold p-2">
+            {images.map((_, i) => <option key={i} value={i}>Photo {i + 1}</option>)}
+          </select>}
           <Button
             size="sm"
             variant="outline"
@@ -359,6 +368,7 @@ export function PanelItem({
         confirmLabel={(n) => `Add ${n > 0 ? n : ''} Photo${n === 1 ? '' : 's'}`}
         maxSelect={MAX_PANEL_IMAGES - images.length}
       />
+      <PhotoCartoonDialog open={showCartoon} onOpenChange={setShowCartoon} initialSource={images[cartoonSourceIndex] ?? panel.imageBlob} />
     </div>
   );
 }

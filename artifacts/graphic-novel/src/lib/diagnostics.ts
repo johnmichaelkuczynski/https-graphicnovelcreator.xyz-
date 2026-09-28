@@ -258,12 +258,16 @@ const SCENARIOS: Scenario[] = [
 
 export async function runDiagnostics(
   onProgress?: (message: string, fraction: number) => void,
+  signal?: AbortSignal,
+  selected?: number[],
 ): Promise<DiagnosticScenarioResult[]> {
   const results: DiagnosticScenarioResult[] = [];
-  for (let s = 0; s < SCENARIOS.length; s++) {
-    const sc = SCENARIOS[s];
-    const base = s / SCENARIOS.length;
-    const span = 1 / SCENARIOS.length;
+  const scenarios = selected ? selected.map(i => SCENARIOS[i]) : SCENARIOS;
+  for (let s = 0; s < scenarios.length; s++) {
+    signal?.throwIfAborted();
+    const sc = scenarios[s];
+    const base = s / scenarios.length;
+    const span = 1 / scenarios.length;
     const steps: DiagnosticStep[] = [];
     try {
       onProgress?.(`Building "${sc.name}"…`, base);
@@ -281,6 +285,7 @@ export async function runDiagnostics(
 
       onProgress?.(`Rendering "${sc.name}"…`, base + span * 0.3);
       const { blob } = await renderVideoBlob(panels, tracks);
+      signal?.throwIfAborted();
 
       onProgress?.(`Verifying "${sc.name}"…`, base + span * 0.7);
       steps.push(...(await verify(blob, panels)));
@@ -296,6 +301,7 @@ export async function runDiagnostics(
       ok: steps.length > 0 && steps.every((st) => st.ok),
       steps,
     });
+    signal?.throwIfAborted();
   }
   onProgress?.('Done', 1);
   return results;

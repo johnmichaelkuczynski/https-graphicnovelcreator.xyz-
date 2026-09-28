@@ -14,3 +14,17 @@ mtime_ms = 1790618092301
 storage_uri = "gcs://replit-rams-assets-spock/rams/assets/repl:f9e01faa-5716-4f8b-9a6a-3654523e91af/43ce4d7c-0dfd-4900-a0fb-7a0537cdbbd1/d45466c7-fee2-447e-8531-3fd9f336a99a"
 storage_version_token = "1790618119487190"
 content_type = "image/png"
+
+[[outputs]]
+id = "4Euif1QOkxiKc48EoTpap"
+uri = "file://outputs/group-psychology-noir.pdf"
+type = "pdf"
+title = "Group Psychology — 10-panel Film Noir"
+description = "The actual PDF exported from your app after real generation from your essay."
+logical_id = "db945c6e-db9f-4bd6-ad10-78d30c5bcb06"
+content_hash = "sha256:84ec9bcd48364472dca688916b877b5b2f74e906a577ce974448f436389768f5"
+size = 898527
+mtime_ms = 1790624578326
+storage_uri = "gcs://replit-rams-assets-spock/rams/assets/repl:f9e01faa-5716-4f8b-9a6a-3654523e91af/db945c6e-db9f-4bd6-ad10-78d30c5bcb06/ddaae577-af0f-4552-8cd5-e7e400c1f14a"
+storage_version_token = "1790624965330632"
+content_type = "application/pdf"

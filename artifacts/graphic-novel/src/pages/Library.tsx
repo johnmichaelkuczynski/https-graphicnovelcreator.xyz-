@@ -17,6 +17,7 @@ import {
 } from '@/hooks/use-library';
 import { extractTextFromFile, ACCEPTED_TEXT_TYPES } from '@/lib/text-extract';
 import { BrandMark } from '@/components/BrandMark';
+import { PhotoCartoonDialog } from '@/components/PhotoCartoonDialog';
 
 
 function formatDate(ts: number) {
@@ -102,6 +103,8 @@ function ImagesTab() {
   const deleteImage = useDeleteLibraryImage();
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
+  const [cartoonSource, setCartoonSource] = useState<Blob | null>(null);
+  const [showCartoon, setShowCartoon] = useState(false);
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []).filter((f) => f.type.startsWith('image/'));
@@ -124,6 +127,7 @@ function ImagesTab() {
 
   return (
     <div className="flex flex-col gap-4">
+      <PhotoCartoonDialog open={showCartoon} onOpenChange={setShowCartoon} initialSource={cartoonSource} />
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <p className="font-bold text-sm text-muted-foreground">
           {images.length} image{images.length === 1 ? '' : 's'} saved
@@ -152,6 +156,7 @@ function ImagesTab() {
               </div>
               <div className="p-2 flex items-center justify-between gap-1">
                 <span className="text-xs font-bold truncate" title={img.name}>{img.name}</span>
+                <button onClick={() => { setCartoonSource(img.imageBlob); setShowCartoon(true); }} className="shrink-0 text-xs font-bold hover:bg-accent p-1 border border-border" title={`Turn ${img.name} into a cartoon`}>Cartoon</button>
                 <button
                   onClick={() => deleteImage.mutate(img.id)}
                   className="shrink-0 text-destructive hover:bg-destructive/10 p-1 border border-transparent hover:border-destructive"

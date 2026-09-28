@@ -111,11 +111,28 @@ export function getPanelImages(panel: Pick<Panel, 'imageBlob' | 'extraImages'>):
   );
 }
 
-let dbPromise: Promise<IDBPDatabase<NovelDBSchema>>;
+const LEGACY_DB = 'novel-creator-db';
+let activeDBName: string | null = null;
+const connections = new Map<string, Promise<IDBPDatabase<NovelDBSchema>>>();
+
+// The caller must establish the authenticated storage partition before any
+// project query runs. Never silently fall back to the unscoped legacy database.
+export function selectDataScope(userId: string, preview = false) {
+  activeDBName = preview ? LEGACY_DB : `${LEGACY_DB}-user-${encodeURIComponent(userId)}`;
+}
+
+export function getProjectSelectionKey(userId: string, preview = false) {
+  return preview ? 'novel-current-project-id' : `novel-current-project-id:user:${encodeURIComponent(userId)}`;
+}
 
 export async function getDB() {
-  if (!dbPromise) {
-    dbPromise = openDB<NovelDBSchema>('novel-creator-db', 5, {
+  if (!activeDBName) throw new Error('Project storage is not ready. Please reload after signing in.');
+  return openNovelDB(activeDBName);
+}
+
+function openNovelDB(name: string): Promise<IDBPDatabase<NovelDBSchema>> {
+  if (!connections.has(name)) {
+    const opening = openDB<NovelDBSchema>(name, 5, {
       async upgrade(db, oldVersion, _newVersion, tx) {
         if (!db.objectStoreNames.contains('panels')) {
           const panelStore = db.createObjectStore('panels', { keyPath: 'id' });
@@ -174,8 +191,39 @@ export async function getDB() {
         }
       },
     });
+    connections.set(name, opening);
+    opening.catch(() => { if (connections.get(name) === opening) connections.delete(name); });
   }
-  return dbPromise;
+  return connections.get(name)!;
+}
+
+// Copy, never move or delete: old locally saved novels remain recoverable if
+// the browser runs out of space during migration. Only the *known* prior owner
+// of the unscoped DB may import it; an unknown owner must not be guessed.
+export async function migrateLegacyData(userId: string): Promise<void> {
+  const target = await openNovelDB(`${LEGACY_DB}-user-${encodeURIComponent(userId)}`);
+  const source = await openNovelDB(LEGACY_DB);
+  const stores = ['projects', 'panels', 'audio_tracks', 'library_images', 'library_documents', 'library_instructions'] as const;
+  const records = await Promise.all(stores.map((store) => source.getAll(store)));
+  const tx = target.transaction(stores, 'readwrite');
+  void tx.done.catch(() => {}); // The explicit abort path throws the original write error.
+  try {
+    // Import only if this partition has not already been used. Do not revive
+    // old projects a user deliberately deleted after a previous import.
+    if (await tx.objectStore('projects').count() || await tx.objectStore('panels').count() ||
+        await tx.objectStore('audio_tracks').count()) {
+      await tx.done;
+      return;
+    }
+    for (let i = 0; i < stores.length; i++) {
+      const store = tx.objectStore(stores[i]);
+      for (const record of records[i]) await store.put(record as never);
+    }
+    await tx.done;
+  } catch (err) {
+    try { tx.abort(); } catch { /* already aborted */ }
+    throw err;
+  }
 }
 
 export const dbApi = {
@@ -218,6 +266,7 @@ export const dbApi = {
       ...page,
     };
     const tx = db.transaction(['projects', 'panels', 'audio_tracks'], 'readwrite');
+    void tx.done.catch(() => {}); // Prevent an abort from masking the write error.
     try {
       await tx.objectStore('projects').put(project);
       for (let i = 0; i < panels.length; i++) {

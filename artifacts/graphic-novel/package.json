@@ -57,6 +57,7 @@
     "cmdk": "^1.1.1",
     "date-fns": "^3.6.0",
     "embla-carousel-react": "^8.6.0",
+    "fake-indexeddb": "^6.2.5",
     "fix-webm-duration": "^1.0.6",
     "framer-motion": "catalog:",
     "idb": "^8.0.0",

@@ -18,7 +18,7 @@ import {
   useLibraryDocuments, useSaveLibraryDocument,
   useLibraryInstructions, useSaveLibraryInstruction,
 } from '@/hooks/use-library';
-import { dbApi } from '@/lib/db';
+import { dbApi, type Project } from '@/lib/db';
 import { useQueryClient } from '@tanstack/react-query';
 import { validateAudioFile, AUDIO_ACCEPT } from '@/lib/audio-validate';
 import { toast } from '@/hooks/use-toast';
@@ -54,6 +54,7 @@ export function ConvertDialog({
   const [progress, setProgress] = useState<ConvertProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [partialPanels, setPartialPanels] = useState<GeneratedPanel[]>([]);
+  const [generationComplete, setGenerationComplete] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
   const [extracting, setExtracting] = useState(false);
@@ -167,19 +168,20 @@ export function ConvertDialog({
       audioFile ? { audioBlob: audioFile, name: audioFile.name } : undefined,
       styleId === 'film-noir' ? { layout: 'film-noir', pageTitle: pageTitle.trim() } : undefined,
     );
-    await Promise.all([
-      qc.invalidateQueries({ queryKey: ['projects'] }),
-      qc.invalidateQueries({ queryKey: ['panels'] }),
-      qc.invalidateQueries({ queryKey: ['audio'] }),
-    ]);
+    // The transaction above is the success boundary. Seed the selected
+    // project's cache before switching so an old list cannot undo selection.
+    qc.setQueryData<Project[]>(['projects'], (old = []) => [...old.filter((p) => p.id !== project.id), project]);
     setCurrentProjectId(project.id);
+    void Promise.all([
+      qc.invalidateQueries({ queryKey: ['projects'] }),
+      qc.invalidateQueries({ queryKey: ['panels', project.id] }),
+      qc.invalidateQueries({ queryKey: ['audio', project.id] }),
+    ]);
     setPartialPanels([]);
+    setGenerationComplete(false);
     onOpenChange(false);
-    setSourceText('');
-    setOutputSpec('');
-    setPageTitle('');
-    setAudioFile(null);
-    setUploadedName(null);
+    // Keep the source and settings available when reopening the converter,
+    // so the same story can be generated again in a different drawing style.
   };
 
   const handleConvert = async () => {
@@ -190,6 +192,7 @@ export function ConvertDialog({
     }
     setError(null);
     setPartialPanels([]);
+    setGenerationComplete(false);
     setBusy(true);
     setProgress({ stage: 'script', current: 0, total: panelCount, message: 'Starting…' });
     const controller = new AbortController();
@@ -209,10 +212,15 @@ export function ConvertDialog({
       });
       controller.signal.throwIfAborted();
       abortRef.current = null;
+      setPartialPanels(panels);
+      setGenerationComplete(true);
+      setProgress({ stage: 'done', current: panels.length, total: panels.length, message: 'Saving panels to this browser…' });
       await saveNovel(panels);
     } catch (err) {
       setPartialPanels(completed);
-      setError(controller.signal.aborted
+      setError(completed.length === panelCount && !controller.signal.aborted
+        ? `All panels were generated, but the project could not be saved: ${err instanceof Error ? err.message : 'Unknown storage error'}. Retry saving below; no generation is needed.`
+        : controller.signal.aborted
         ? 'Generation cancelled. No project was saved.'
         : err instanceof Error ? err.message : 'Something went wrong. Try again.');
     } finally {
@@ -226,7 +234,7 @@ export function ConvertDialog({
     setBusy(true);
     setError(null);
     try {
-      await saveNovel(partialPanels, true);
+      await saveNovel(partialPanels, !generationComplete);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save completed panels.');
     } finally {
@@ -237,7 +245,10 @@ export function ConvertDialog({
   const handleOpenChange = (nextOpen: boolean) => {
     if (busy) return;
     if (!nextOpen) {
-      setPartialPanels([]);
+      if (partialPanels.length) {
+        setError('Save or download your generated panels before closing, or choose Discard panels explicitly.');
+        return;
+      }
       setError(null);
     }
     onOpenChange(nextOpen);
@@ -584,15 +595,32 @@ export function ConvertDialog({
           )}
           {!busy && partialPanels.length > 0 && (
             <div className="flex flex-col gap-2 border-2 border-border p-3">
-              <p className="text-sm font-bold">{partialPanels.length} panel{partialPanels.length === 1 ? '' : 's'} completed. Save them as an unfinished project, or retry the entire story. Closing discards these images.</p>
+              <p className="text-sm font-bold">{partialPanels.length} panel{partialPanels.length === 1 ? '' : 's'} generated. {generationComplete ? 'Retry saving the complete project without generating again.' : 'Save these as an unfinished project without generating again.'}</p>
               <Button onClick={handleSavePartial} variant="outline" data-testid="button-save-partial">
-                Save {partialPanels.length} completed panel{partialPanels.length === 1 ? '' : 's'}
+                {generationComplete ? 'Retry saving complete project' : `Save ${partialPanels.length} completed panel${partialPanels.length === 1 ? '' : 's'}`}
               </Button>
+              <div className="flex flex-wrap gap-2">
+                {partialPanels.map((panel, index) => (
+                  <Button key={index} size="sm" variant="outline" onClick={() => {
+                    const url = URL.createObjectURL(panel.imageBlob);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = `panel-${index + 1}.${panel.imageBlob.type === 'image/jpeg' ? 'jpg' : 'png'}`;
+                    link.click();
+                    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+                  }}>Download panel {index + 1}</Button>
+                ))}
+              </div>
+              <Button size="sm" variant="ghost" onClick={() => {
+                setPartialPanels([]);
+                setGenerationComplete(false);
+                setError(null);
+              }}>Discard generated panels</Button>
             </div>
           )}
           <Button
             onClick={handleConvert}
-            disabled={busy || readiness?.[mode] !== true || extracting}
+            disabled={busy || partialPanels.length > 0 || readiness?.[mode] !== true || extracting}
             data-testid="button-generate-novel"
             className="bg-primary text-primary-foreground border-2 border-border brutal-shadow brutal-shadow-hover font-black uppercase tracking-widest text-lg py-6"
           >

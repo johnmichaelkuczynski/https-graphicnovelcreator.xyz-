@@ -240,8 +240,11 @@ export async function editImage(
   prompt: string,
   strength: number,
   negativePrompt?: string,
+  signal?: AbortSignal,
 ): Promise<Blob> {
+  signal?.throwIfAborted();
   const resized = await downscaleImage(image, 1024);
+  signal?.throwIfAborted();
   const params = new URLSearchParams({ prompt, strength: String(strength) });
   if (negativePrompt && negativePrompt.trim()) {
     params.set('negative_prompt', negativePrompt.trim());
@@ -250,10 +253,14 @@ export async function editImage(
     method: 'POST',
     headers: { 'Content-Type': 'image/png' },
     body: resized,
+    signal,
   });
   if (!res.ok) throw new Error(await readError(res));
   const blob = await res.blob();
-  if (!blob.size) throw new Error('The editor returned no image. Try again.');
+  const signature = new Uint8Array(await blob.slice(0, 8).arrayBuffer());
+  if (![137, 80, 78, 71, 13, 10, 26, 10].every((byte, i) => signature[i] === byte)) {
+    throw new Error('The image provider did not return a PNG. No result was saved.');
+  }
   return blob;
 }
 
@@ -307,6 +314,6 @@ export async function convertTextToNovel(params: ConvertParams): Promise<Generat
     onPanel?.(panel);
   }
 
-  onProgress?.({ stage: 'done', current: script.panels.length, total: script.panels.length, message: 'Done!' });
+  onProgress?.({ stage: 'done', current: script.panels.length, total: script.panels.length, message: 'Images ready; saving project…' });
   return results;
 }

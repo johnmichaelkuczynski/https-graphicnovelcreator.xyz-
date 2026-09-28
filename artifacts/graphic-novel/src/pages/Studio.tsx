@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'wouter';
 import { usePanels, useAudioTracks, useSavePanel, useSaveAudioTrack } from '@/hooks/use-novel';
 import { useCreateProject, useClearProject } from '@/hooks/use-projects';
@@ -8,10 +8,13 @@ import { AudioManager } from '@/components/AudioManager';
 import { PreviewPlayer } from '@/components/PreviewPlayer';
 import { ConvertDialog } from '@/components/ConvertDialog';
 import { EditImageDialog } from '@/components/EditImageDialog';
+import { PhotoCartoonDialog } from '@/components/PhotoCartoonDialog';
 import { ProjectsDialog } from '@/components/ProjectsDialog';
 import { DiagnosticsDialog } from '@/components/DiagnosticsDialog';
+import { AllStylesComicDialog } from '@/components/AllStylesComicDialog';
 import { LibraryImagePicker } from '@/components/LibraryImagePicker';
-import { LibraryImage } from '@/lib/db';
+import { dbApi, LibraryImage } from '@/lib/db';
+import { openCompletedNovel } from '@/lib/completed-novel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -32,11 +35,10 @@ import {
 import { exportPdf, exportVideo } from '@/lib/export';
 import { validateAudioFile, AUDIO_ACCEPT } from '@/lib/audio-validate';
 import { useQueryClient } from '@tanstack/react-query';
-import { useAuth } from '@/hooks/use-auth';
-import { STORAGE_KEY } from '@/lib/project-context';
-import { dbApi } from '@/lib/db';
+import { developmentPreview, useAuth } from '@/hooks/use-auth';
 import { BrandMark } from '@/components/BrandMark';
 import { toast } from 'sonner';
+import { comicStyles } from '@/lib/all-styles-comic';
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
 
@@ -48,16 +50,12 @@ export default function Studio() {
   const handleLogout = async () => {
     try {
       await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
-    } catch {
-      // Even if the network call fails, still clear local data below.
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not log out. Please retry.');
+      return;
     }
-    localStorage.removeItem(STORAGE_KEY);
-    localStorage.removeItem('gnc:last-user-id');
-    try {
-      await dbApi.clearAllData();
-    } catch {
-      // ignore
-    }
+    // Never delete local work on logout. AuthDataGuard isolates each account's
+    // IndexedDB partition, including when another user signs in here.
     queryClient.clear();
     window.location.href = basePath || '/';
   };
@@ -75,15 +73,43 @@ export default function Studio() {
   const [exportStatus, setExportStatus] = useState<string | null>(null);
   const [showConvert, setShowConvert] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
+  const [showCartoon, setShowCartoon] = useState(false);
   const [showProjects, setShowProjects] = useState(false);
   const [showNewProject, setShowNewProject] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [showAllStyles, setShowAllStyles] = useState(false);
   const [showLibraryPicker, setShowLibraryPicker] = useState(false);
+  const [completedImportStatus, setCompletedImportStatus] = useState<string | null>(null);
+  const completedImportStarted = useRef(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!developmentPreview || !isReady ||
+        new URLSearchParams(window.location.search).get('completed') !== 'group-psychology' ||
+        completedImportStarted.current) return;
+    completedImportStarted.current = true;
+    setCompletedImportStatus('Opening completed novel…');
+    void (async () => {
+      try {
+        const project = await openCompletedNovel();
+        // Publish the committed data to React Query before selecting the novel
+        // so ProjectProvider never falls back to an older project-list snapshot.
+        queryClient.setQueryData(['projects'], await dbApi.getProjects());
+        queryClient.setQueryData(['panels', project.id], await dbApi.getPanels(project.id));
+        setCurrentProjectId(project.id);
+        const url = new URL(window.location.href);
+        url.searchParams.delete('completed');
+        window.history.replaceState(window.history.state, '', url);
+        setCompletedImportStatus(null);
+      } catch (error) {
+        setCompletedImportStatus(error instanceof Error ? error.message : 'Could not open the completed novel.');
+      }
+    })();
+  }, [isReady, queryClient, setCurrentProjectId]);
 
   const addImageFiles = async (files: FileList | File[]) => {
     if (!currentProjectId) return;
@@ -166,9 +192,15 @@ export default function Studio() {
   };
 
   const doClearProject = async () => {
-    if (!currentProjectId) return;
-    await clearProject.mutateAsync(currentProjectId);
-    setShowClearConfirm(false);
+    if (!currentProjectId || clearProject.isPending) return;
+    try {
+      await clearProject.mutateAsync(currentProjectId);
+      setIsPreviewing(false);
+      setShowClearConfirm(false);
+      toast.success('Output removed. Your source text is still in Story → Graphic Novel.');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not remove the output. Please retry.');
+    }
   };
 
   const handleExportPdf = async () => {
@@ -219,6 +251,7 @@ export default function Studio() {
       <ConvertDialog open={showConvert} onOpenChange={setShowConvert} />
 
       <EditImageDialog open={showEdit} onOpenChange={setShowEdit} />
+      <PhotoCartoonDialog open={showCartoon} onOpenChange={setShowCartoon} />
 
       <ProjectsDialog open={showProjects} onOpenChange={setShowProjects} />
 
@@ -261,6 +294,7 @@ export default function Studio() {
       </Dialog>
 
       <DiagnosticsDialog open={showDiagnostics} onOpenChange={setShowDiagnostics} />
+      <AllStylesComicDialog open={showAllStyles} onOpenChange={setShowAllStyles} />
 
       <LibraryImagePicker
         open={showLibraryPicker}
@@ -271,21 +305,22 @@ export default function Studio() {
       <AlertDialog open={showClearConfirm} onOpenChange={setShowClearConfirm}>
         <AlertDialogContent className="border-2 border-border">
           <AlertDialogHeader>
-            <AlertDialogTitle className="font-black uppercase tracking-tight">Clear this project?</AlertDialogTitle>
+            <AlertDialogTitle className="font-black uppercase tracking-tight">Start again?</AlertDialogTitle>
             <AlertDialogDescription>
-              All panels and audio in "{currentProject?.name ?? 'this project'}" will be permanently removed. This cannot be undone.
+              All output panels, images, captions, and audio in "{currentProject?.name ?? 'this project'}" will be permanently removed. Your converter source text, other projects, and library items will stay. This cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel className="border-2 border-border font-bold">Cancel</AlertDialogCancel>
             <AlertDialogAction
+              disabled={clearProject.isPending}
               onClick={(e) => {
                 e.preventDefault();
                 void doClearProject();
               }}
               className="border-2 border-border font-bold bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Clear
+              {clearProject.isPending ? 'Removing output…' : 'Delete output and start again'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -359,6 +394,14 @@ export default function Studio() {
               <LibraryIcon className="w-4 h-4 mr-2" /> Library
             </Button>
           </Link>
+          {developmentPreview && (
+            <a
+              href={`${basePath || '/'}?completed=group-psychology`}
+              className="inline-flex items-center justify-center whitespace-nowrap bg-card border-2 border-border brutal-shadow brutal-shadow-hover font-bold px-3 py-2 text-sm"
+            >
+              Open completed novel
+            </a>
+          )}
         </div>
 
         <div className="studio-action-bar flex items-center gap-3 flex-nowrap overflow-x-auto overscroll-x-contain w-full lg:w-auto lg:flex-wrap lg:overflow-visible pb-2 lg:pb-0">
@@ -409,6 +452,24 @@ export default function Studio() {
             <Sparkles className="w-4 h-4 mr-2" /> Edit Photo
           </Button>
 
+          <Button
+            variant="outline"
+            className="bg-card border-2 border-border brutal-shadow brutal-shadow-hover font-black uppercase tracking-tight"
+            onClick={() => setShowCartoon(true)}
+          >
+            <Sparkles className="w-4 h-4 mr-2" /> Photo to Cartoon
+          </Button>
+
+          <Button
+            variant="outline"
+            className="bg-card border-2 border-border brutal-shadow brutal-shadow-hover font-black uppercase tracking-tight"
+            onClick={() => setShowClearConfirm(true)}
+            disabled={clearProject.isPending || !!exportStatus || (panels.length === 0 && audioTracks.length === 0)}
+            data-testid="button-start-again"
+          >
+            <Trash2 className="w-4 h-4 mr-2" /> Start Again
+          </Button>
+
           {/* Export self-test — always enabled; builds its own synthetic novels */}
           <Button
             variant="outline"
@@ -417,6 +478,11 @@ export default function Studio() {
             title="Run an end-to-end self-test of video export"
           >
             <Activity className="w-4 h-4 mr-2" /> Self-Test
+          </Button>
+          <Button variant="outline" className="bg-card border-2 border-border brutal-shadow brutal-shadow-hover font-bold h-auto py-2"
+            onClick={() => setShowAllStyles(true)}
+            title="One click starts standard-provider generation; charges vary by provider. Reopening saved results does not generate again.">
+            <span>All Styles Comic Test <small className="block font-medium">{comicStyles().length} scripts + {comicStyles().length * 4} images = {comicStyles().length * 5} paid requests · price varies</small></span>
           </Button>
 
           {/* Download menu */}
@@ -442,7 +508,7 @@ export default function Studio() {
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => setShowClearConfirm(true)} className="font-bold cursor-pointer text-destructive focus:text-destructive">
-                <Trash2 className="w-4 h-4 mr-2" /> Clear This Project
+                <Trash2 className="w-4 h-4 mr-2" /> Start Again
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => setShowProjects(true)} className="font-bold cursor-pointer text-destructive focus:text-destructive">
                 <Trash2 className="w-4 h-4 mr-2" /> Delete Projects…
@@ -506,6 +572,12 @@ export default function Studio() {
           </DropdownMenu>
         </div>
       </header>
+
+      {completedImportStatus && (
+        <div role="status" className="shrink-0 px-4 py-3 border-b-2 border-border bg-card font-bold">
+          {completedImportStatus}
+        </div>
+      )}
 
       {/* Main Workspace */}
       <main className="flex-1 flex overflow-hidden">

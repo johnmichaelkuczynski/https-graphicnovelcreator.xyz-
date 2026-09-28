@@ -171,11 +171,11 @@ export async function exportPdf(
   projectName: string,
   onProgress?: (fraction: number) => void,
   project?: Project | null,
+  download = true,
 ) {
   if (panels.length === 0) throw new Error('There are no panels to export. Add at least one panel first.');
   if (project?.layout === 'film-noir') {
-    await exportNoirPdf(panels, projectName, project.pageTitle ?? '', onProgress);
-    return;
+    return exportNoirPdf(panels, projectName, project.pageTitle ?? '', onProgress, download);
   }
 
   const pdf = new jsPDF({ unit: 'pt', format: 'a4' });
@@ -243,12 +243,14 @@ export async function exportPdf(
     throw new Error('None of the panel images could be read, so the PDF would be blank.');
   }
 
-  pdf.save(`${safeName(projectName) || 'graphic-novel'}.pdf`);
+  const blob = pdf.output('blob');
+  if (download) pdf.save(`${safeName(projectName) || 'graphic-novel'}.pdf`);
+  return blob;
 }
 
 // Full page image assembled from exactly the same app-lettered PNGs seen in the
 // studio and preview. Keep standard (one-panel-per-page) PDFs untouched.
-async function exportNoirPdf(panels: Panel[], name: string, title: string, onProgress?: (fraction: number) => void) {
+async function exportNoirPdf(panels: Panel[], name: string, title: string, onProgress?: (fraction: number) => void, download = true) {
   const pdf = new jsPDF({ unit: 'pt', format: 'a4' });
   const canvas = document.createElement('canvas');
   canvas.width = 1200;
@@ -308,7 +310,9 @@ async function exportNoirPdf(panels: Panel[], name: string, title: string, onPro
       pdf.internal.pageSize.getWidth(), pdf.internal.pageSize.getHeight());
     await nextFrame();
   }
-  pdf.save(`${safeName(name) || 'film-noir'}.pdf`);
+  const blob = pdf.output('blob');
+  if (download) pdf.save(`${safeName(name) || 'film-noir'}.pdf`);
+  return blob;
 }
 
 function drawPanelFrame(

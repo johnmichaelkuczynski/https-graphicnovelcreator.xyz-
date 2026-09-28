@@ -343,7 +343,9 @@ router.post(
       });
       if (!upstream.ok) {
         req.log.error({ status: upstream.status }, "Dezgo image edit failed");
-        res.status(502).json({ error: "Could not modify the image. Try again." });
+        res.status(502).json({ error: [400, 403, 422].includes(upstream.status)
+          ? "The image provider rejected this edit or does not support this content. Try a different image or style."
+          : `The image provider could not complete this edit (HTTP ${upstream.status}). Try again.` });
         return;
       }
       const arrayBuf = await upstream.arrayBuffer();
