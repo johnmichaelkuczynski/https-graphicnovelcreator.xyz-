@@ -4,6 +4,8 @@ const SCRIPT_URL = '/api/ai/script';
 const IMAGE_URL = '/api/ai/image';
 const EDIT_URL = '/api/ai/edit';
 
+export type GenerationMode = 'standard' | 'mature';
+
 export interface ScriptPanel {
   caption: string;
   scene: string;
@@ -88,6 +90,7 @@ export async function generateScript(
   sourceText: string,
   outputSpec: string,
   panelCount: number,
+  mode: GenerationMode,
   signal?: AbortSignal,
 ): Promise<StoryScript> {
   const system = [
@@ -98,11 +101,13 @@ export async function generateScript(
     `"caption" is the visible narration and/or dialogue. Use "Name: exact spoken words" for dialogue, separate multiple lines with newlines. Keep captions readable and concise; do not substitute a visual description for speech.`,
     `"characters" lists every recurring visible character with a stable, distinctive physical appearance (hair, age, clothing, identifying features). Respect any descriptions in the source; if absent, choose one consistent appearance. Do not put style or medium in appearances.`,
     `"scene" describes ONLY the pictured subject matter: named characters, setting, action, expression and composition. Include the relevant character names. Do NOT mention art style, medium, "comic", "panel", "drawing", "illustration" or render instructions. Do NOT ask the image model to draw text or speech bubbles; the app renders captions separately.`,
+    ...(mode === 'mature' ? [`Mature themes may include serious adult subject matter, but do not create explicit sexual content or pornography.`] : []),
   ].join('\n');
 
   const user = `DESIRED OUTPUT (what the story should become):\n${outputSpec}\n\nSOURCE TEXT:\n${sourceText}`;
 
   const json = await postJson(SCRIPT_URL, {
+    mode,
     temperature: 0.3,
     max_tokens: 8192,
     messages: [
@@ -138,6 +143,7 @@ export async function generateImage(
   prompt: string,
   style: StylePreset,
   seed: number,
+  mode: GenerationMode,
   signal?: AbortSignal,
 ): Promise<Blob> {
   // The image route returns raw PNG bytes (the provider lives server-side).
@@ -145,6 +151,7 @@ export async function generateImage(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
+      mode,
       prompt,
       seed,
       width: style.image.width,
@@ -213,6 +220,7 @@ export async function editImage(
 }
 
 export interface ConvertParams {
+  mode: GenerationMode;
   sourceText: string;
   outputSpec: string;
   style: StylePreset;
@@ -224,10 +232,10 @@ export interface ConvertParams {
 }
 
 export async function convertTextToNovel(params: ConvertParams): Promise<GeneratedPanel[]> {
-  const { sourceText, outputSpec, style, customStyle, panelCount, onProgress, onPanel, signal } = params;
+  const { mode, sourceText, outputSpec, style, customStyle, panelCount, onProgress, onPanel, signal } = params;
 
   onProgress?.({ stage: 'script', current: 0, total: panelCount, message: 'Writing the story…' });
-  const script = await generateScript(sourceText, outputSpec, panelCount, signal);
+  const script = await generateScript(sourceText, outputSpec, panelCount, mode, signal);
 
   // The exact same style text is prepended to EVERY panel, and a single fixed
   // seed is reused for all panels, so the drawing style cannot drift.
@@ -248,7 +256,7 @@ export async function convertTextToNovel(params: ConvertParams): Promise<Generat
       message: `Drawing panel ${i + 1} of ${script.panels.length}…`,
     });
     const prompt = `${styleText}. ${characterGuide}SCENE: ${script.panels[i].scene}. No lettering, text, speech bubbles or watermarks.`;
-    const imageBlob = await generateImage(prompt, style, seed, signal);
+    const imageBlob = await generateImage(prompt, style, seed, mode, signal);
     const panel = { caption: script.panels[i].caption, scene: script.panels[i].scene, imageBlob };
     results.push(panel);
     onPanel?.(panel);

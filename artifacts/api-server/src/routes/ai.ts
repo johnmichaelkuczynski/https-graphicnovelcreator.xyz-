@@ -12,32 +12,39 @@ const messageSchema = z.object({
   content: z.string().max(100_000),
 });
 
+const modeSchema = z.enum(["standard", "mature"]);
+
 // The client never sends keys, base URLs, or model names. All providers and
 // their keys live here in the backend (env secrets) and are never exposed.
 const scriptSchema = z.object({
+  mode: modeSchema.optional().default("standard"),
   messages: z.array(messageSchema).min(1).max(4),
   temperature: z.number().min(0).max(1).optional(),
   max_tokens: z.number().int().min(1).max(8192).optional(),
-});
+}).strict();
 
 const imageSchema = z.object({
+  mode: modeSchema.optional().default("standard"),
   prompt: z.string().min(1).max(20_000),
   negative_prompt: z.string().optional(),
   seed: z.number().optional(),
   width: z.number().optional(),
   height: z.number().optional(),
   steps: z.number().optional(),
-});
+}).strict();
 
 // ---- Fixed backend providers (keys come from env, never the client) ----
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_MODEL = "claude-sonnet-4-6";
 const VENICE_CHAT_URL = "https://api.venice.ai/api/v1/chat/completions";
 const VENICE_CHAT_MODEL = "llama-3.3-70b";
+// Venice image/generate supports binary PNG with return_binary, pixel dimensions
+// for venice-sd35 (multiples of 16), and a 1500-character prompt limit.
+const VENICE_IMAGE_URL = "https://api.venice.ai/api/v1/image/generate";
+const VENICE_IMAGE_MODEL = "venice-sd35";
 const DEZGO_FLUX_URL = "https://api.dezgo.com/text2image_flux";
 const DEZGO_MODEL = "flux_1_schnell";
-// Image-to-image edits use a Stable Diffusion model (Flux has no img2img on
-// Dezgo). realistic_vision_5_1 follows edit prompts well and is uncensored.
+// Image-to-image edits use a Stable Diffusion model (Flux has no img2img on Dezgo).
 const DEZGO_I2I_URL = "https://api.dezgo.com/image2image";
 const DEZGO_I2I_MODEL = "realistic_vision_5_1";
 
@@ -141,14 +148,20 @@ function clampSteps(n: number | undefined): number {
   return Math.max(1, Math.min(8, Math.round(n ?? 4)));
 }
 
+function isPng(bytes: Buffer): boolean {
+  return bytes.length >= 8 &&
+    bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+}
+
 // Tells the client whether AI generation is ready (keys present). No secrets,
 // models, or provider details are ever sent to the browser.
 router.get("/ai/config", (_req, res) => {
-  const ready = !!(
+  const standard = !!(
     (process.env.ANTHROPIC_API_KEY || process.env.VENICE_API_KEY) &&
     process.env.DEZGO_API_KEY
   );
-  res.json({ ready });
+  const mature = !!process.env.VENICE_API_KEY;
+  res.json({ ready: standard, modes: { standard, mature } });
 });
 
 router.post("/ai/script", async (req, res) => {
@@ -157,7 +170,25 @@ router.post("/ai/script", async (req, res) => {
     res.status(400).json({ error: "Invalid request", details: parsed.error.issues });
     return;
   }
-  const { messages, temperature, max_tokens } = parsed.data;
+  const { mode, messages, temperature, max_tokens } = parsed.data;
+  if (mode === "mature") {
+    if (!process.env.VENICE_API_KEY) {
+      res.status(503).json({ error: "Mature themes generation requires Venice to be configured." });
+      return;
+    }
+    try {
+      const content = await veniceChat(messages, temperature, max_tokens, 120_000);
+      if (!content.trim()) {
+        res.status(502).json({ error: "Venice returned no story text. Try again." });
+        return;
+      }
+      res.json({ content });
+    } catch (err) {
+      req.log.error({ err }, "Venice story generation failed");
+      res.status(502).json({ error: "Venice could not generate the story. Check Venice availability and try again." });
+    }
+    return;
+  }
   if (!process.env.ANTHROPIC_API_KEY && !process.env.VENICE_API_KEY) {
     res.status(503).json({ error: "Story generation is not configured." });
     return;
@@ -190,50 +221,70 @@ router.post("/ai/image", async (req, res) => {
     res.status(400).json({ error: "Invalid request", details: parsed.error.issues });
     return;
   }
-  const key = process.env.DEZGO_API_KEY;
+  const { mode, prompt, negative_prompt, seed, width, height, steps } = parsed.data;
+  const key = mode === "mature" ? process.env.VENICE_API_KEY : process.env.DEZGO_API_KEY;
   if (!key) {
-    res.status(503).json({ error: "Image generation is not configured." });
+    res.status(503).json({ error: mode === "mature"
+      ? "Mature themes image generation requires Venice to be configured."
+      : "Image generation is not configured." });
     return;
   }
-  const { prompt, negative_prompt, seed, width, height, steps } = parsed.data;
+  if (mode === "mature" && (prompt.length > 1500 || (negative_prompt?.length ?? 0) > 7500)) {
+    res.status(400).json({ error: "Venice image prompts must be at most 1,500 characters (negative prompts at most 7,500). Shorten the style or character descriptions." });
+    return;
+  }
 
-  const body: Record<string, unknown> = {
-    prompt,
-    model: DEZGO_MODEL,
-    width: clampDim(width),
-    height: clampDim(height),
-    steps: clampSteps(steps),
-    format: "png",
-  };
+  const body: Record<string, unknown> = mode === "mature"
+    ? {
+        model: VENICE_IMAGE_MODEL,
+        prompt,
+        width: Math.round(clampDim(width) / 16) * 16,
+        height: Math.round(clampDim(height) / 16) * 16,
+        steps: 25,
+        format: "png",
+        return_binary: true,
+      }
+    : {
+        prompt,
+        model: DEZGO_MODEL,
+        width: clampDim(width),
+        height: clampDim(height),
+        steps: clampSteps(steps),
+        format: "png",
+      };
   if (negative_prompt) body.negative_prompt = negative_prompt;
-  if (typeof seed === "number") body.seed = Math.abs(Math.floor(seed)) % 2_147_483_647;
+  if (typeof seed === "number") body.seed = Math.abs(Math.floor(seed)) % (mode === "mature" ? 999_999_999 : 2_147_483_647);
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 180_000);
   try {
-    const upstream = await fetch(DEZGO_FLUX_URL, {
+    const upstream = await fetch(mode === "mature" ? VENICE_IMAGE_URL : DEZGO_FLUX_URL, {
       method: "POST",
-      headers: { "X-Dezgo-Key": key, "content-type": "application/json" },
+      headers: mode === "mature"
+        ? { Authorization: `Bearer ${key}`, "content-type": "application/json" }
+        : { "X-Dezgo-Key": key, "content-type": "application/json" },
       body: JSON.stringify(body),
       signal: controller.signal,
     });
     if (!upstream.ok) {
-      req.log.error({ status: upstream.status }, "Dezgo image generation failed");
-      res.status(502).json({ error: "Could not generate the image. Try again." });
+      req.log.error({ status: upstream.status, mode }, "Image generation failed");
+      res.status(502).json({ error: mode === "mature"
+        ? "Venice could not generate the image. Check Venice availability and try again."
+        : "Could not generate the image. Try again." });
       return;
     }
     const arrayBuf = await upstream.arrayBuffer();
     const bytes = Buffer.from(arrayBuf);
-    if (bytes.length < 8 || !bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) {
-      req.log.error("Dezgo returned non-PNG data");
-      res.status(502).json({ error: "Image provider returned invalid image data." });
+    if (!isPng(bytes)) {
+      req.log.error({ mode }, "Image provider returned non-PNG data");
+      res.status(502).json({ error: mode === "mature" ? "Venice returned invalid image data." : "Image provider returned invalid image data." });
       return;
     }
     res.setHeader("Content-Type", "image/png");
     res.send(bytes);
   } catch (err) {
-    req.log.error({ err }, "AI image request failed");
-    res.status(502).json({ error: "Could not reach the image provider." });
+    req.log.error({ err, mode }, "AI image request failed");
+    res.status(502).json({ error: mode === "mature" ? "Could not reach Venice image generation." : "Could not reach the image provider." });
   } finally {
     clearTimeout(timer);
   }

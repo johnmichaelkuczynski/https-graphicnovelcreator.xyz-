@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { extractTextFromFile, ACCEPTED_TEXT_TYPES } from '@/lib/text-extract';
 import { STYLE_PRESETS, getStylePreset } from '@/lib/style-presets';
-import { convertTextToNovel, type ConvertProgress, type GeneratedPanel } from '@/lib/ai-client';
+import { convertTextToNovel, type ConvertProgress, type GeneratedPanel, type GenerationMode } from '@/lib/ai-client';
 import { useProjectContext } from '@/lib/project-context';
 import {
   useLibraryDocuments, useSaveLibraryDocument,
@@ -43,6 +43,7 @@ export function ConvertDialog({
   const [sourceText, setSourceText] = useState('');
   const [outputSpec, setOutputSpec] = useState('');
   const [styleId, setStyleId] = useState('stick');
+  const [mode, setMode] = useState<GenerationMode>('standard');
   const [customStyle, setCustomStyle] = useState('');
   const [panelCount, setPanelCount] = useState(6);
   const [duration, setDuration] = useState(4);
@@ -57,8 +58,8 @@ export function ConvertDialog({
   const [extracting, setExtracting] = useState(false);
   const [uploadedName, setUploadedName] = useState<string | null>(null);
 
-  // Whether the backend has AI keys configured. undefined = not yet checked.
-  const [ready, setReady] = useState<boolean | undefined>(undefined);
+  // Credential readiness only; no provider keys or model IDs enter the browser.
+  const [readiness, setReadiness] = useState<Record<GenerationMode, boolean> | null>(null);
 
   const audioRef = useRef<HTMLInputElement>(null);
   const docRef = useRef<HTMLInputElement>(null);
@@ -66,13 +67,17 @@ export function ConvertDialog({
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
+    setReadiness(null);
     (async () => {
       try {
         const r = await fetch('/api/ai/config');
         const data = r.ok ? await r.json() : null;
-        if (!cancelled) setReady(!!data?.ready);
+        if (!cancelled) setReadiness({
+          standard: !!data?.modes?.standard,
+          mature: !!data?.modes?.mature,
+        });
       } catch {
-        if (!cancelled) setReady(false);
+        if (!cancelled) setReadiness({ standard: false, mature: false });
       }
     })();
     return () => {
@@ -189,6 +194,7 @@ export function ConvertDialog({
     const completed: GeneratedPanel[] = [];
     try {
       const panels = await convertTextToNovel({
+        mode,
         sourceText,
         outputSpec,
         style,
@@ -248,6 +254,30 @@ export function ConvertDialog({
         </DialogHeader>
 
         <div className="flex flex-col gap-5 py-2">
+          <fieldset disabled={busy} className="flex flex-col gap-2">
+            <legend className="font-black uppercase text-xs mb-2">Story theme</legend>
+            <div className="grid grid-cols-2 gap-2">
+              {([
+                { value: 'standard', label: 'Standard', hint: 'Usual story and illustration generation' },
+                { value: 'mature', label: 'Mature themes (Venice)', hint: 'For adult audiences and mature storytelling; not explicit pornography' },
+              ] as const).map((option) => (
+                <label key={option.value} className={`cursor-pointer p-3 border-2 border-border text-sm ${
+                  mode === option.value ? 'bg-primary text-primary-foreground brutal-shadow' : 'bg-card'
+                }`}>
+                  <input
+                    type="radio"
+                    name="generation-mode"
+                    value={option.value}
+                    checked={mode === option.value}
+                    onChange={() => setMode(option.value)}
+                    className="mr-2"
+                  />
+                  <span className="font-black">{option.label}</span>
+                  <span className="block text-xs mt-1">{option.hint}</span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
           {/* Source text */}
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -503,10 +533,12 @@ export function ConvertDialog({
             </p>
           </div>
 
-          {ready === false && (
+          {readiness && !readiness[mode] && (
             <div className="flex items-start gap-2 p-3 border-2 border-destructive bg-destructive/10 text-destructive text-sm font-bold">
               <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
-              <span>AI generation is unavailable. Sign in and ensure story and image providers are configured on the server, then reopen this dialog.</span>
+              <span>{mode === 'mature'
+                ? 'Mature themes generation is unavailable. Sign in and ensure Venice is configured on the server, then reopen this dialog.'
+                : 'Standard generation is unavailable. Sign in and ensure story and image providers are configured on the server, then reopen this dialog.'}</span>
             </div>
           )}
 
@@ -549,7 +581,7 @@ export function ConvertDialog({
           )}
           <Button
             onClick={handleConvert}
-            disabled={busy || ready !== true || extracting}
+            disabled={busy || readiness?.[mode] !== true || extracting}
             data-testid="button-generate-novel"
             className="bg-primary text-primary-foreground border-2 border-border brutal-shadow brutal-shadow-hover font-black uppercase tracking-widest text-lg py-6"
           >
