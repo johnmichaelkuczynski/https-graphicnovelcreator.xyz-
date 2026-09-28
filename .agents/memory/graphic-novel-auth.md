@@ -5,6 +5,10 @@ description: How auth works in Graphic Novel Creator after the Clerk→Google OA
 
 # Auth: custom Google OAuth (Clerk was removed)
 
+Development access must not require Google; production authentication and admin restrictions must remain intact.
+**Why:** The user explicitly requested frictionless development access, not removal of public-app login protection.
+**How to apply:** Preserve this separation when changing authentication; verify the real development hostname, since localhost screenshot requests do not qualify for development access.
+
 Auth is the app's OWN Google OAuth, not Clerk. The implementation is a **user-supplied canonical `auth.ts`** (in `artifacts/api-server/src/auth.ts`) that must be kept verbatim except app-specific domain values — do not "clean it up" (it uses `console.*`, `as any`, and a hardcoded dev SESSION_SECRET fallback on purpose). Stack: `passport` + `passport-google-oauth20`, server-side sessions via `express-session` backed by `connect-pg-simple`. `setupAuth(app)` (called from `app.ts`) wires trust-proxy + session + passport + the `/api/auth/*` and `/api/admin/*` routes. Users persist in the `users` table with a **numeric serial `id`** plus `username`/`googleId`/`email`/`displayName`; a `storage.ts` (Drizzle) layer backs all the lookups/upserts auth.ts calls. A `visits` table records one row per successful sign-in for the owner-only `/api/admin/visits` analytics (admin = `johnmichaelkuczynski@gmail.com`). All `/api/ai/*` are gated by `isAuthenticated` exported from `auth.ts`.
 
 **Session table must be in the Drizzle schema, NOT left to `createTableIfMissing`.** `connect-pg-simple`'s `createTableIfMissing: true` tries to read its bundled `table.sql`, which does not exist after esbuild bundles the server (`ENOENT dist/table.sql`), so on a fresh DB it silently fails to create `user_sessions` and login won't persist. Fix: `user_sessions` is declared in `lib/db/src/schema/sessions.ts` (columns `sid`/`sess`/`expire` + `IDX_user_sessions_expire`) so `db push` provisions it everywhere; auth.ts's `createTableIfMissing` then becomes a harmless no-op. Never remove that schema table.

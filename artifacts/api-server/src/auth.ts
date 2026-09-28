@@ -6,6 +6,22 @@ import type { Express, RequestHandler } from "express";
 import { storage } from "./storage";
 import pg from "pg";
 
+// Preview access never creates a database user or a Passport session. It is
+// available only in the development process on its configured preview domain,
+// never on deployments (even if a host header is forged).
+export function developmentPreviewUser(req: { get(name: string): string | undefined }) {
+  const domain = process.env.REPLIT_DEV_DOMAIN?.trim().toLowerCase();
+  const host = (req.get("x-forwarded-host") || req.get("host") || "")
+    .split(",")[0].trim().toLowerCase();
+  if (
+    process.env.NODE_ENV !== "development" ||
+    process.env.REPLIT_DEPLOYMENT === "1" ||
+    !domain ||
+    host !== domain
+  ) return null;
+  return { id: -1, username: "development-preview", email: null, displayName: "Development preview", devPreview: true };
+}
+
 declare global {
   namespace Express {
     interface User {
@@ -265,7 +281,8 @@ export function setupAuth(app: Express) {
         },
       });
     } else {
-      res.json({ authenticated: false, user: null });
+      const preview = developmentPreviewUser(req);
+      res.json({ authenticated: !!preview, user: preview });
     }
   });
 
@@ -278,6 +295,11 @@ export function setupAuth(app: Express) {
         displayName: req.user.displayName,
       });
     } else {
+      const preview = developmentPreviewUser(req);
+      if (preview) {
+        res.json(preview);
+        return;
+      }
       res.status(401).json({ error: "Not authenticated" });
     }
   });
@@ -378,7 +400,7 @@ export const isAdmin: RequestHandler = (req, res, next) => {
 };
 
 export const isAuthenticated: RequestHandler = (req, res, next) => {
-  if (req.isAuthenticated()) {
+  if (req.isAuthenticated() || developmentPreviewUser(req)) {
     return next();
   }
   res.status(401).json({ error: "Not authenticated" });

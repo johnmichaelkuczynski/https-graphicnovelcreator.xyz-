@@ -494,12 +494,14 @@ export default function Studio() {
                   <DropdownMenuSeparator />
                 </>
               )}
-              <DropdownMenuItem
-                onClick={() => void handleLogout()}
-                className="font-bold cursor-pointer text-destructive focus:text-destructive"
-              >
-                <LogOut className="w-4 h-4 mr-2" /> Log Out
-              </DropdownMenuItem>
+              {!user?.devPreview && (
+                <DropdownMenuItem
+                  onClick={() => void handleLogout()}
+                  className="font-bold cursor-pointer text-destructive focus:text-destructive"
+                >
+                  <LogOut className="w-4 h-4 mr-2" /> Log Out
+                </DropdownMenuItem>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>

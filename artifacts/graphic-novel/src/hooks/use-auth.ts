@@ -5,6 +5,7 @@ export interface AuthUser {
   username: string;
   email: string | null;
   displayName: string | null;
+  devPreview?: boolean;
 }
 
 export const AUTH_QUERY_KEY = ["auth", "me"] as const;
@@ -32,7 +33,7 @@ export function useAuth() {
   return {
     user: query.data ?? null,
     isSignedIn: !!query.data,
-    isAdmin: query.data?.email?.toLowerCase() === ADMIN_EMAIL,
+    isAdmin: !query.data?.devPreview && query.data?.email?.toLowerCase() === ADMIN_EMAIL,
     isLoading: query.isLoading,
   };
 }
