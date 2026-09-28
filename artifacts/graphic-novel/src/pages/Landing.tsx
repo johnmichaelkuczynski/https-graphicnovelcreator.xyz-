@@ -1,14 +1,14 @@
 import React from "react";
 import { Button } from "@/components/ui/button";
-import { BookOpen, ImagePlus, Music, Film } from "lucide-react";
+import { BookOpen, Wand2, Music, Film } from "lucide-react";
 import { signInWithGoogle } from "@/hooks/use-auth";
 import { BrandMark } from "@/components/BrandMark";
 
 const features = [
   {
-    icon: ImagePlus,
-    title: "Upload Your Panels",
-    desc: "Drag and drop your own images to build pages, instantly.",
+    icon: Wand2,
+    title: "Story to Panels",
+    desc: "Paste a story or screenplay, pick an art style, and generate illustrated panels with dialogue. Or upload your own images.",
   },
   {
     icon: Music,
@@ -73,11 +73,12 @@ export default function Landing() {
             <BookOpen className="w-4 h-4" /> Your Story, Your Panels
           </div>
           <h1 className="text-5xl sm:text-6xl font-black uppercase tracking-tighter leading-[0.95]">
-            Build Graphic Novels From Your Own Images
+            Turn Your Story Into a Graphic Novel
           </h1>
           <p className="text-lg text-muted-foreground font-medium max-w-xl">
-            Upload images, write captions, add audio, and play it back as a
-            cinematic slideshow. Everything stays in your browser.
+            Paste a story, dialogue, or screenplay and choose a drawing style.
+            Generate illustrated panels with captions, or build manually from your own images.
+            Save your projects in this browser, add audio, and export.
           </p>
           <div className="flex items-center gap-4 flex-wrap justify-center">
             <Button

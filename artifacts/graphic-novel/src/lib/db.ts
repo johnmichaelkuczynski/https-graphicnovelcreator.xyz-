@@ -197,6 +197,46 @@ export const dbApi = {
     return project;
   },
 
+  // Commit a generated novel as one transaction: a failed write cannot leave
+  // an empty/partially populated project in the switcher.
+  async createGeneratedProject(
+    name: string,
+    panels: { imageBlob: Blob; caption: string; durationSeconds: number }[],
+    audio?: { audioBlob: Blob; name: string },
+  ): Promise<Project> {
+    if (!panels.length) throw new Error('There are no generated panels to save.');
+    const db = await getDB();
+    const now = Date.now();
+    const project: Project = {
+      id: crypto.randomUUID(),
+      name: name.trim() || 'Untitled Project',
+      createdAt: now,
+      updatedAt: now,
+    };
+    const tx = db.transaction(['projects', 'panels', 'audio_tracks'], 'readwrite');
+    try {
+      await tx.objectStore('projects').put(project);
+      for (let i = 0; i < panels.length; i++) {
+        await tx.objectStore('panels').put({
+          id: crypto.randomUUID(), projectId: project.id,
+          imageBlob: panels[i].imageBlob, caption: panels[i].caption,
+          durationSeconds: panels[i].durationSeconds, order: i,
+        });
+      }
+      if (audio) {
+        await tx.objectStore('audio_tracks').put({
+          id: crypto.randomUUID(), projectId: project.id, audioBlob: audio.audioBlob,
+          name: audio.name, order: 0,
+        });
+      }
+      await tx.done;
+    } catch (err) {
+      try { tx.abort(); } catch { /* transaction already finished or aborted */ }
+      throw err;
+    }
+    return project;
+  },
+
   async renameProject(id: string, name: string): Promise<void> {
     const db = await getDB();
     const project = await db.get('projects', id);

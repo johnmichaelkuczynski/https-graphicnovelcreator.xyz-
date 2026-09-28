@@ -398,7 +398,7 @@ export default function Studio() {
             className="bg-primary text-primary-foreground border-2 border-border brutal-shadow brutal-shadow-hover hover:bg-primary/90 font-black uppercase tracking-tight"
             onClick={() => setShowConvert(true)}
           >
-            <Wand2 className="w-4 h-4 mr-2" /> Convert Text
+             <Wand2 className="w-4 h-4 mr-2" /> Story → Graphic Novel
           </Button>
 
           <Button
@@ -532,9 +532,18 @@ export default function Studio() {
                 <ImageIcon className="w-12 h-12" />
               </div>
               <h2 className="text-3xl font-black mb-4 uppercase">Blank Canvas</h2>
-              <p className="text-lg text-muted-foreground mb-8">
-                Drag and drop images here, or upload several at once to create your panels.
+              <p className="text-lg text-muted-foreground mb-6">
+                Turn a story, dialogue, or screenplay into illustrated panels with captions,
+                or upload your own images to build manually.
               </p>
+              <Button
+                size="lg"
+                className="bg-secondary text-secondary-foreground border-2 border-border brutal-shadow brutal-shadow-hover font-bold text-lg mb-4"
+                onClick={() => setShowConvert(true)}
+                data-testid="button-create-from-story"
+              >
+                <Wand2 className="w-5 h-5 mr-2" /> Create from story
+              </Button>
               <Button
                 size="lg"
                 className="bg-primary text-primary-foreground border-2 border-border brutal-shadow brutal-shadow-hover font-bold text-lg"

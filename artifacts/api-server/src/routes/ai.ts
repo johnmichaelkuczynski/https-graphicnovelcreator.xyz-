@@ -9,19 +9,19 @@ router.use(isAuthenticated);
 
 const messageSchema = z.object({
   role: z.enum(["system", "user", "assistant"]),
-  content: z.string(),
+  content: z.string().max(100_000),
 });
 
 // The client never sends keys, base URLs, or model names. All providers and
 // their keys live here in the backend (env secrets) and are never exposed.
 const scriptSchema = z.object({
-  messages: z.array(messageSchema).min(1),
-  temperature: z.number().optional(),
-  max_tokens: z.number().optional(),
+  messages: z.array(messageSchema).min(1).max(4),
+  temperature: z.number().min(0).max(1).optional(),
+  max_tokens: z.number().int().min(1).max(8192).optional(),
 });
 
 const imageSchema = z.object({
-  prompt: z.string().min(1),
+  prompt: z.string().min(1).max(20_000),
   negative_prompt: z.string().optional(),
   seed: z.number().optional(),
   width: z.number().optional(),
@@ -158,6 +158,10 @@ router.post("/ai/script", async (req, res) => {
     return;
   }
   const { messages, temperature, max_tokens } = parsed.data;
+  if (!process.env.ANTHROPIC_API_KEY && !process.env.VENICE_API_KEY) {
+    res.status(503).json({ error: "Story generation is not configured." });
+    return;
+  }
 
   let content = "";
   try {
@@ -219,8 +223,14 @@ router.post("/ai/image", async (req, res) => {
       return;
     }
     const arrayBuf = await upstream.arrayBuffer();
+    const bytes = Buffer.from(arrayBuf);
+    if (bytes.length < 8 || !bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) {
+      req.log.error("Dezgo returned non-PNG data");
+      res.status(502).json({ error: "Image provider returned invalid image data." });
+      return;
+    }
     res.setHeader("Content-Type", "image/png");
-    res.send(Buffer.from(arrayBuf));
+    res.send(bytes);
   } catch (err) {
     req.log.error({ err }, "AI image request failed");
     res.status(502).json({ error: "Could not reach the image provider." });

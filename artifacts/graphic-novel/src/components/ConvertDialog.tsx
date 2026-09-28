@@ -12,9 +12,8 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { extractTextFromFile, ACCEPTED_TEXT_TYPES } from '@/lib/text-extract';
 import { STYLE_PRESETS, getStylePreset } from '@/lib/style-presets';
-import { convertTextToNovel, ConvertProgress } from '@/lib/ai-client';
+import { convertTextToNovel, type ConvertProgress, type GeneratedPanel } from '@/lib/ai-client';
 import { useProjectContext } from '@/lib/project-context';
-import { useCreateProject } from '@/hooks/use-projects';
 import {
   useLibraryDocuments, useSaveLibraryDocument,
   useLibraryInstructions, useSaveLibraryInstruction,
@@ -32,7 +31,6 @@ export function ConvertDialog({
   onOpenChange: (v: boolean) => void;
 }) {
   const { setCurrentProjectId } = useProjectContext();
-  const createProject = useCreateProject();
   const qc = useQueryClient();
 
   const { data: libraryDocs = [] } = useLibraryDocuments();
@@ -53,6 +51,8 @@ export function ConvertDialog({
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<ConvertProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [partialPanels, setPartialPanels] = useState<GeneratedPanel[]>([]);
+  const abortRef = useRef<AbortController | null>(null);
 
   const [extracting, setExtracting] = useState(false);
   const [uploadedName, setUploadedName] = useState<string | null>(null);
@@ -146,10 +146,32 @@ export function ConvertDialog({
 
   const validate = (): string | null => {
     if (!sourceText.trim()) return 'Paste the source text you want to convert.';
-    if (!outputSpec.trim()) return 'Describe what the output should be.';
+    if (sourceText.length > 100_000) return 'The source is too long (100,000 characters maximum). Shorten it before generating.';
     if (styleId === 'custom' && !customStyle.trim()) return 'Describe your custom drawing style.';
     if (panelCount < 1 || panelCount > 24) return 'Choose between 1 and 24 panels.';
+    if (!Number.isFinite(duration) || duration < 0.5) return 'Set at least half a second per panel.';
     return null;
+  };
+
+  const saveNovel = async (panels: GeneratedPanel[], partial = false) => {
+    const name = outputSpec.trim().slice(0, 40) || `Novel ${new Date().toLocaleDateString()}`;
+    const project = await dbApi.createGeneratedProject(
+      partial ? `${name} (unfinished)` : name,
+      panels.map((p) => ({ imageBlob: p.imageBlob, caption: p.caption, durationSeconds: duration })),
+      audioFile ? { audioBlob: audioFile, name: audioFile.name } : undefined,
+    );
+    await Promise.all([
+      qc.invalidateQueries({ queryKey: ['projects'] }),
+      qc.invalidateQueries({ queryKey: ['panels'] }),
+      qc.invalidateQueries({ queryKey: ['audio'] }),
+    ]);
+    setCurrentProjectId(project.id);
+    setPartialPanels([]);
+    onOpenChange(false);
+    setSourceText('');
+    setOutputSpec('');
+    setAudioFile(null);
+    setUploadedName(null);
   };
 
   const handleConvert = async () => {
@@ -159,8 +181,12 @@ export function ConvertDialog({
       return;
     }
     setError(null);
+    setPartialPanels([]);
     setBusy(true);
     setProgress({ stage: 'script', current: 0, total: panelCount, message: 'Starting…' });
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const completed: GeneratedPanel[] = [];
     try {
       const panels = await convertTextToNovel({
         sourceText,
@@ -169,63 +195,55 @@ export function ConvertDialog({
         customStyle,
         panelCount,
         onProgress: setProgress,
+        onPanel: (panel) => completed.push(panel),
+        signal: controller.signal,
       });
-
-      const name =
-        outputSpec.trim().slice(0, 40) || `Novel ${new Date().toLocaleDateString()}`;
-      const project = await createProject.mutateAsync(name);
-
-      const sharedAudio = audioFile
-        ? { blob: audioFile, name: audioFile.name }
-        : null;
-
-      for (let i = 0; i < panels.length; i++) {
-        await dbApi.savePanel({
-          id: crypto.randomUUID(),
-          projectId: project.id,
-          imageBlob: panels[i].imageBlob,
-          caption: panels[i].caption,
-          durationSeconds: duration,
-          order: i,
-        });
-      }
-      if (sharedAudio) {
-        await dbApi.saveAudioTrack({
-          id: crypto.randomUUID(),
-          projectId: project.id,
-          audioBlob: sharedAudio.blob,
-          name: sharedAudio.name,
-          order: 0,
-        });
-      }
-
-      qc.invalidateQueries({ queryKey: ['panels'] });
-      qc.invalidateQueries({ queryKey: ['audio'] });
-      setCurrentProjectId(project.id);
-      onOpenChange(false);
-      // reset volatile inputs but keep last choices
-      setSourceText('');
-      setOutputSpec('');
-      setAudioFile(null);
-      setUploadedName(null);
+      controller.signal.throwIfAborted();
+      abortRef.current = null;
+      await saveNovel(panels);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong. Try again.');
+      setPartialPanels(completed);
+      setError(controller.signal.aborted
+        ? 'Generation cancelled. No project was saved.'
+        : err instanceof Error ? err.message : 'Something went wrong. Try again.');
     } finally {
+      abortRef.current = null;
       setBusy(false);
       setProgress(null);
     }
   };
 
+  const handleSavePartial = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await saveNovel(partialPanels, true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save completed panels.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (busy) return;
+    if (!nextOpen) {
+      setPartialPanels([]);
+      setError(null);
+    }
+    onOpenChange(nextOpen);
+  };
+
   return (
-    <Dialog open={open} onOpenChange={(v) => !busy && onOpenChange(v)}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-2xl border-4 border-border brutal-shadow max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-2xl font-black uppercase flex items-center gap-2">
             <Wand2 className="w-6 h-6" /> Text → Graphic Novel
           </DialogTitle>
           <DialogDescription className="font-medium">
-            Paste any text, say what it should become, pick a drawing style, and convert.
-            The AI is built in — no setup, no keys.
+            Paste a story, dialogue, or screenplay (or upload a document). Choose a drawing style
+            and create illustrated panels with captions and dialogue. A new project is saved when finished.
           </DialogDescription>
         </DialogHeader>
 
@@ -309,7 +327,7 @@ export function ConvertDialog({
               value={sourceText}
               onChange={(e) => setSourceText(e.target.value)}
               rows={5}
-              placeholder="Paste an essay, article, proof, notes — anything. Or upload a PDF, Word doc, or TXT file."
+               placeholder="Paste your story, dialogue, or screenplay. Or upload a PDF, Word doc, or TXT file."
               className="border-2 border-border resize-y"
               disabled={busy}
             />
@@ -323,7 +341,7 @@ export function ConvertDialog({
           {/* Output spec */}
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between gap-2 flex-wrap">
-              <Label className="font-black uppercase text-xs">Turn it into…</Label>
+              <Label className="font-black uppercase text-xs">Adaptation notes</Label>
               <div className="flex items-center gap-2 flex-wrap">
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -378,7 +396,7 @@ export function ConvertDialog({
               value={outputSpec}
               onChange={(e) => setOutputSpec(e.target.value)}
               rows={2}
-              placeholder='e.g. "A spooky haunted-house tale with a man, a woman and a talking cat" or "A plain-English explainer for kids".'
+              placeholder='Optional direction, e.g. "Keep the dialogue and make the scenes suspenseful."'
               className="border-2 border-border resize-y"
               disabled={busy}
             />
@@ -488,7 +506,7 @@ export function ConvertDialog({
           {ready === false && (
             <div className="flex items-start gap-2 p-3 border-2 border-destructive bg-destructive/10 text-destructive text-sm font-bold">
               <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
-              <span>AI generation isn’t available right now. Try again shortly.</span>
+              <span>AI generation is unavailable. Sign in and ensure story and image providers are configured on the server, then reopen this dialog.</span>
             </div>
           )}
 
@@ -515,15 +533,30 @@ export function ConvertDialog({
             </div>
           )}
 
+          {busy && (
+            <Button type="button" variant="outline" onClick={() => abortRef.current?.abort()}
+              disabled={!abortRef.current} data-testid="button-cancel-generation">
+              Cancel generation
+            </Button>
+          )}
+          {!busy && partialPanels.length > 0 && (
+            <div className="flex flex-col gap-2 border-2 border-border p-3">
+              <p className="text-sm font-bold">{partialPanels.length} panel{partialPanels.length === 1 ? '' : 's'} completed. Save them as an unfinished project, or retry the entire story. Closing discards these images.</p>
+              <Button onClick={handleSavePartial} variant="outline" data-testid="button-save-partial">
+                Save {partialPanels.length} completed panel{partialPanels.length === 1 ? '' : 's'}
+              </Button>
+            </div>
+          )}
           <Button
             onClick={handleConvert}
-            disabled={busy}
+            disabled={busy || ready !== true || extracting}
+            data-testid="button-generate-novel"
             className="bg-primary text-primary-foreground border-2 border-border brutal-shadow brutal-shadow-hover font-black uppercase tracking-widest text-lg py-6"
           >
             {busy ? (
               <><Loader2 className="w-5 h-5 mr-2 animate-spin" /> Converting…</>
             ) : (
-              <><Wand2 className="w-5 h-5 mr-2" /> Convert</>
+              <><Wand2 className="w-5 h-5 mr-2" /> Create graphic novel</>
             )}
           </Button>
         </div>
