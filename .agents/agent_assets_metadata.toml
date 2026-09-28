@@ -1,0 +1,16 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "4CM2t4RxUdbbe4B4iB6Vt"
+uri = "file://attached_assets/cat-umbrella-provider-test.png"
+type = "image"
+title = "Verified sample illustration"
+description = "Actual image returned by the configured illustration provider during the live generation check."
+logical_id = "43ce4d7c-0dfd-4900-a0fb-7a0537cdbbd1"
+content_hash = "sha256:7a1e25f8fb214affa2078382035ae19012ebd8619e2865e8b26afc54483ca723"
+size = 581349
+mtime_ms = 1790618092301
+storage_uri = "gcs://replit-rams-assets-spock/rams/assets/repl:f9e01faa-5716-4f8b-9a6a-3654523e91af/43ce4d7c-0dfd-4900-a0fb-7a0537cdbbd1/d45466c7-fee2-447e-8531-3fd9f336a99a"
+storage_version_token = "1790618119487190"
+content_type = "image/png"
