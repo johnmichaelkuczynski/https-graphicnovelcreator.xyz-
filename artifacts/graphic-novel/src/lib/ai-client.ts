@@ -1,5 +1,6 @@
 import { StylePreset } from './style-presets';
 import { validateNoirDialogue } from './noir-render';
+import type { PanelGeneration } from './db';
 
 const SCRIPT_URL = '/api/ai/script';
 const IMAGE_URL = '/api/ai/image';
@@ -21,6 +22,7 @@ export interface GeneratedPanel {
   caption: string;
   scene: string;
   imageBlob: Blob;
+  generation?: PanelGeneration;
 }
 
 export interface ConvertProgress {
@@ -200,10 +202,41 @@ export async function generateImage(
   });
   if (!res.ok) throw new Error(await readError(res));
   const blob = await res.blob();
-  if (!blob.size || !blob.type.startsWith('image/')) {
-    throw new Error('The image provider returned invalid image data. Try again.');
-  }
+  await validateGeneratedImage(blob);
   return blob;
+}
+
+export async function validateGeneratedImage(blob: Blob): Promise<void> {
+  const header = new Uint8Array(await blob.slice(0, 16).arrayBuffer());
+  const png = [137, 80, 78, 71, 13, 10, 26, 10].every((b, i) => header[i] === b);
+  const jpeg = header[0] === 255 && header[1] === 216 && header[2] === 255;
+  const webp = new TextDecoder().decode(header.slice(0, 4)) === 'RIFF' &&
+    new TextDecoder().decode(header.slice(8, 12)) === 'WEBP';
+  if (!png && !jpeg && !webp) {
+    const text = await blob.slice(0, 4096).text();
+    let refusal = '';
+    try {
+      const json = JSON.parse(text);
+      refusal = typeof json?.error === 'string' ? json.error : json?.error?.message ?? json?.message ?? '';
+    } catch {
+      if (/^(content policy|request refused|generation refused|image generation failed)/i.test(text.trim())) refusal = text.trim().slice(0, 250);
+    }
+    throw new Error(refusal ? `Image provider: ${refusal}` : 'The image provider returned non-image data. The original was kept.');
+  }
+  if (blob.size < 128) throw new Error('The image provider returned an empty or incomplete image. The original was kept.');
+  if (typeof createImageBitmap !== 'function') throw new Error('This browser cannot validate generated images. The original was kept.');
+  let bitmap: ImageBitmap;
+  try {
+    bitmap = await createImageBitmap(blob);
+  } catch {
+    throw new Error('The image provider returned an image that could not be decoded. The original was kept.');
+  }
+  try {
+    if (bitmap.width < 64 || bitmap.height < 64)
+      throw new Error('The image provider returned a very small image. The original was kept.');
+  } finally {
+    bitmap.close?.();
+  }
 }
 
 // Shrink an uploaded image to a sane size before sending it to the editor, so
@@ -309,7 +342,10 @@ export async function convertTextToNovel(params: ConvertParams): Promise<Generat
     });
     const prompt = `${styleText}. ${characterGuide}SCENE: ${script.panels[i].scene}. No lettering, text, speech bubbles or watermarks.`;
     const imageBlob = await generateImage(prompt, style, seed, mode, signal);
-    const panel = { caption: script.panels[i].caption, scene: script.panels[i].scene, imageBlob };
+    const panel: GeneratedPanel = {
+      caption: script.panels[i].caption, scene: script.panels[i].scene, imageBlob,
+      generation: { prompt, scene: script.panels[i].scene, styleId: style.id, styleText, mode, seed, characterGuide },
+    };
     results.push(panel);
     onPanel?.(panel);
   }

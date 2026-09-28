@@ -15,6 +15,17 @@ export interface Project {
 // images 2..N live in the optional `extraImages` array.
 export const MAX_PANEL_IMAGES = 8;
 
+// Optional for older/imported/manually added panels; no database migration required.
+export interface PanelGeneration {
+  prompt: string;
+  scene: string;
+  styleId: string;
+  styleText: string;
+  mode: 'standard' | 'mature';
+  seed: number;
+  characterGuide: string;
+}
+
 export interface Panel {
   id: string;
   projectId: string;
@@ -33,6 +44,7 @@ export interface Panel {
   // Last ElevenLabs voice used to voice this panel's character, so the choice
   // persists between speech regenerations.
   voiceId?: string;
+  generation?: PanelGeneration;
 }
 
 export interface AudioTrack {
@@ -251,7 +263,7 @@ export const dbApi = {
   // an empty/partially populated project in the switcher.
   async createGeneratedProject(
     name: string,
-    panels: { imageBlob: Blob; caption: string; durationSeconds: number }[],
+    panels: { imageBlob: Blob; caption: string; durationSeconds: number; generation?: PanelGeneration }[],
     audio?: { audioBlob: Blob; name: string },
     page?: { layout: 'film-noir'; pageTitle?: string },
   ): Promise<Project> {
@@ -274,6 +286,7 @@ export const dbApi = {
           id: crypto.randomUUID(), projectId: project.id,
           imageBlob: panels[i].imageBlob, caption: panels[i].caption,
           durationSeconds: panels[i].durationSeconds, order: i,
+          ...(panels[i].generation ? { generation: panels[i].generation } : {}),
         });
       }
       if (audio) {
@@ -335,6 +348,20 @@ export const dbApi = {
   async savePanel(panel: Panel): Promise<void> {
     const db = await getDB();
     await db.put('panels', panel);
+  },
+
+  // Read at acceptance time so concurrent caption, audio, reorder and extra-image
+  // changes are not overwritten by the stale snapshot used to start generation.
+  async replacePanelImage(id: string, projectId: string, imageBlob: Blob, generation: PanelGeneration): Promise<void> {
+    const db = await getDB();
+    const tx = db.transaction('panels', 'readwrite');
+    const panel = await tx.store.get(id);
+    if (!panel || panel.projectId !== projectId) {
+      await tx.done;
+      throw new Error('This panel no longer exists in the project. No image was replaced.');
+    }
+    await tx.store.put({ ...panel, imageBlob, generation });
+    await tx.done;
   },
 
   async deletePanel(id: string): Promise<void> {

@@ -5,7 +5,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { ImageCollage } from './BlobMedia';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Trash2, GripVertical, Image as ImageIcon, Plus, Clock, Download, Music, X, Upload, Library, Sparkles } from 'lucide-react';
+import { Trash2, GripVertical, Image as ImageIcon, Plus, Clock, Download, Music, X, Upload, Library, Sparkles, RefreshCw } from 'lucide-react';
 import { useSavePanel, useDeletePanel } from '@/hooks/use-novel';
 import { Textarea } from '@/components/ui/textarea';
 import { validateAudioFile, AUDIO_ACCEPT } from '@/lib/audio-validate';
@@ -18,6 +18,7 @@ import { useProjectContext } from '@/lib/project-context';
 import { downloadBlob } from '@/lib/export';
 import { renderNoirPanel } from '@/lib/noir-render';
 import { PhotoCartoonDialog } from './PhotoCartoonDialog';
+import { RegeneratePanelDialog } from './RegeneratePanelDialog';
 
 export function PanelItem({ 
   panel, 
@@ -41,6 +42,7 @@ export function PanelItem({
   
   const [showLibraryPicker, setShowLibraryPicker] = useState(false);
   const [showCartoon, setShowCartoon] = useState(false);
+  const [showRegenerate, setShowRegenerate] = useState(false);
   const [cartoonSourceIndex, setCartoonSourceIndex] = useState(0);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -179,6 +181,9 @@ export function PanelItem({
         </div>
         
         <div className="panel-actions flex items-center gap-2 max-w-full overflow-x-auto">
+          <Button size="sm" variant="outline" className="border-2 border-border bg-background font-bold" onClick={() => setShowRegenerate(true)}>
+            <RefreshCw className="w-4 h-4 mr-1" /> Regenerate
+          </Button>
           <div className="flex items-center gap-1 bg-background border-2 border-border px-2 py-1 brutal-shadow-sm">
             <Clock className="w-3 h-3 text-muted-foreground" />
             <input 
@@ -369,6 +374,7 @@ export function PanelItem({
         maxSelect={MAX_PANEL_IMAGES - images.length}
       />
       <PhotoCartoonDialog open={showCartoon} onOpenChange={setShowCartoon} initialSource={images[cartoonSourceIndex] ?? panel.imageBlob} />
+      <RegeneratePanelDialog panel={panel} open={showRegenerate} onOpenChange={setShowRegenerate} />
     </div>
   );
 }

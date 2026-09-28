@@ -164,7 +164,7 @@ export function ConvertDialog({
     const name = outputSpec.trim().slice(0, 40) || `Novel ${new Date().toLocaleDateString()}`;
     const project = await dbApi.createGeneratedProject(
       partial ? `${name} (unfinished)` : name,
-      panels.map((p) => ({ imageBlob: p.imageBlob, caption: p.caption, durationSeconds: duration })),
+      panels.map((p) => ({ imageBlob: p.imageBlob, caption: p.caption, durationSeconds: duration, generation: p.generation })),
       audioFile ? { audioBlob: audioFile, name: audioFile.name } : undefined,
       styleId === 'film-noir' ? { layout: 'film-noir', pageTitle: pageTitle.trim() } : undefined,
     );
